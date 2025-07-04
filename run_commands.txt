@@ -1,0 +1,68 @@
+# Air Pollutant Prediction – Common Commands
+
+## 1. Environment Setup
+
+```bash
+# Ensure Python 3.10.10 is available (e.g., via pyenv or system package manager)
+python3.10 --version  # should output 3.10.10
+
+# Create and activate a virtual environment with Python 3.10.10
+python3.10 -m venv .venv
+source .venv/bin/activate  # on macOS/Linux
+
+# Install required packages
+pip install -r requirements.txt
+```
+
+---
+
+## 2. Training & Evaluation
+
+### 2.1 Multiple Linear Regression (MLR)
+```bash
+# Using default dataset (data/input_version_2...)
+python main.py --model mlr
+
+# Using alternative dataset
+python main.py --model mlr --data "data/input_version_1..."
+```
+
+### 2.2 CNN + LSTM
+```bash
+python main.py --model cnn_lstm  # default dataset
+```
+
+You can always point to a custom dataset via `--data path/to/file.npy`.
+
+---
+
+## 3. MLflow UI
+```bash
+mlflow ui
+```
+Then open http://localhost:5000 in your browser.
+
+---
+
+## 4. Running Tests
+```bash
+pytest -q
+```
+
+##5. Tensorflow Board
+```bash
+tensorboard --logdir results/logs --port 6006
+```
+
+---
+
+## 6. Additional Examples
+
+```bash
+# Specify custom year column if data schema differs
+python main.py --model mlr --year-column 2
+
+# (Default year-column is 2; adjust only if your dataset schema differs)
+
+# Run CNN+LSTM for 100 epochs by editing 'train.py' or adding flags (future extension)
+``` 

@@ -1,0 +1,16 @@
+Training 1:
+- Loss was in 20,000 -> had to use scaler to normalize values
+- Model was overfitting -> introduced two layers of Dropout to regularize 
+- Model focusing on lower loss of NO2 so neglects PM2.5 and Ozone
+
+Training 2: With Dropout and Scaler
+- MSE at 0.23, MAE at 0.29
+- PM2.5 and Ozone R2 increased
+- Flaws in systematic bias and unexplained variance from the graphs
+- Ozone & PM2.5 predictions have a systematic bias in them
+- NO2 predictions are flat 
+
+Training 3: With Feature Engineering using that USGS/DEM data
+- Ozone R2 0.76 with RMSE 5.1
+- PM2.5 and NO2 performance is still subpar -> possible information ceiling
+- Need more information on extreme PM2.5 events (like wildfires, unique meteoroligcal events)

@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pyw
+*.pyz
+
+# Virtual environments
+.venv/
+
+# IDEs and editors
+.vscode/
+.cursor/
+
+# OS files
+.DS_Store
+
+# Data files
+*.npy
+*.pkl
+*.h5
+*.hdf5
+*.hdf
+*.hdf4
+*.hdf3
+*.hdf2
+*.hdf1
+*.hdf0
+*.hdf-1
+*.hdf-2
+*.hdf-3
+*.hdf-4
+*.hdf-5
+
+# Model files
+*.keras
+
+# Project directories
+archive/
+data/
+mlruns/
+results/checkpoints/*
+results/logs/
