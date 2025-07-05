@@ -142,10 +142,16 @@ def main() -> None:
             log_transform_targets=[0, 2],  # Ozone & NO2
         )
 
+        sequences_detected = False
+
         if args.model == "cnn_lstm" and args.sequence_dir:
             seq_dir = Path(args.sequence_dir)
             if not seq_dir.exists():
                 raise FileNotFoundError(f"Sequence directory not found: {seq_dir}")
+
+            print(f"Sequence directory detected: {seq_dir}. Using pre-built lookback sequences.")
+            sequences_detected = True
+            mlflow.log_param("sequences_detected", True)
 
             import pickle as _pkl
 
@@ -168,7 +174,31 @@ def main() -> None:
                 "target_columns": target_indices,
             }
 
+            tgt_scaler = processed_data["target_scaler"]
+            if tgt_scaler is not None:
+                y_train_log = tgt_scaler.inverse_transform(processed_data["y_train"])
+                y_val_log = tgt_scaler.inverse_transform(processed_data["y_val"])
+                y_test_log = tgt_scaler.inverse_transform(processed_data["y_test"])
+
+                log_tgts = processed_data.get("log_transform_targets", []) or []
+                y_train_raw = np.copy(y_train_log)
+                y_val_raw = np.copy(y_val_log)
+                y_test_raw = np.copy(y_test_log)
+                for _idx in log_tgts:
+                    y_train_raw[:, _idx] = np.expm1(y_train_raw[:, _idx])
+                    y_val_raw[:, _idx] = np.expm1(y_val_raw[:, _idx])
+                    y_test_raw[:, _idx] = np.expm1(y_test_raw[:, _idx])
+
+                processed_data["y_train_raw"] = y_train_raw
+                processed_data["y_val_raw"] = y_val_raw
+                processed_data["y_test_raw"] = y_test_raw
+            else:
+                processed_data["y_train_raw"] = processed_data["y_train"]
+
             mlflow.log_param("sequence_dir", str(seq_dir))
+
+        if not sequences_detected:
+            mlflow.log_param("sequences_detected", False)
 
         print("\nData loading and preprocessing complete.")
         print(f"Training features shape: {processed_data['X_train'].shape}")

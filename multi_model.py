@@ -84,6 +84,18 @@ def main() -> None:
     # Reproducibility – set all relevant PRNG seeds once at the very start
     set_global_seed(42)
 
+    seq_dir_provided = bool(args.sequence_dir)
+    seq_dir_exists = False
+    if seq_dir_provided:
+        _sdir = Path(args.sequence_dir)
+        seq_dir_exists = _sdir.exists()
+        print(
+            f"Sequence directory parameter provided: {_sdir}. Exists on disk: {seq_dir_exists}."
+        )
+        if seq_dir_exists:
+            mlflow.log_param("sequence_dir", str(_sdir))
+    mlflow.log_param("sequences_detected", seq_dir_provided and seq_dir_exists)
+
     data_path = Path(args.data)
 
     mlflow.set_experiment("AirPollutantPrediction")
@@ -210,6 +222,28 @@ def main() -> None:
                 target_columns=[target_idx],
                 log_transform_targets=[0] if cfg["log_transform"] else [],
             )
+
+            tgt_scaler = processed_data.get("target_scaler")
+            if "y_train_raw" not in processed_data and tgt_scaler is not None:
+                y_train_log = tgt_scaler.inverse_transform(processed_data["y_train"])
+                y_val_log = tgt_scaler.inverse_transform(processed_data["y_val"])
+                y_test_log = tgt_scaler.inverse_transform(processed_data["y_test"])
+
+                log_tgts = processed_data.get("log_transform_targets", []) or []
+                y_train_raw = np.copy(y_train_log)
+                y_val_raw = np.copy(y_val_log)
+                y_test_raw = np.copy(y_test_log)
+                for _idx in log_tgts:
+                    y_train_raw[:, _idx] = np.expm1(y_train_raw[:, _idx])
+                    y_val_raw[:, _idx] = np.expm1(y_val_raw[:, _idx])
+                    y_test_raw[:, _idx] = np.expm1(y_test_raw[:, _idx])
+
+                processed_data["y_train_raw"] = y_train_raw
+                processed_data["y_val_raw"] = y_val_raw
+                processed_data["y_test_raw"] = y_test_raw
+
+            if "y_train_raw" not in processed_data:
+                processed_data["y_train_raw"] = processed_data["y_train"]
 
             pollutant_names = [pollutant] 
 
