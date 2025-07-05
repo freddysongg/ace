@@ -9,10 +9,10 @@ Multi-model framework for predicting ground-level concentrations of key air poll
 2. Directory Structure
 3. Installation
 4. Data
-5. Running the Pipeline
-6. Experiment Tracking with MLflow
+5. Running the Pipelines
+6. Experiment Tracking & Visualisation
 7. Testing
-8. Results
+8. Results Directory Layout
 9. Citation
 
 ---
@@ -39,7 +39,8 @@ The full workflow includes data loading & preprocessing, model training, evaluat
 ├── tests/               # Unit tests for key functionality
 ├── notebooks/           # Exploratory notebooks (archived)
 ├── requirements.txt     # Python dependencies
-└── main.py              # Pipeline entry-point
+├── multi_model.py       # Expert-per-pollutant pipeline (one model per pollutant)
+├── single_model.py      # Unified multi-output pipeline (single model for all pollutants)
 ```
 
 ---
@@ -69,33 +70,68 @@ If you store files elsewhere, either update the `--data` argument when running `
 
 ---
 
-## 5. Running the Pipeline
-Run the **complete workflow** (data → training → evaluation) with:
+## 5. Running the Pipelines
 
-```bash
-python main.py
+Two high-level entry-points are provided:
+
+| Script | Purpose |
+| ------ | ------- |
+| `multi_model.py` | Trains **independent / expert** models for each pollutant. Useful when you want tailor-made feature sets and potentially different algorithms per target (e.g. MLR for Ozone, CNN-LSTM for PM2.5). |
+| `single_model.py` | Trains a **single multi-output** model that predicts all pollutants simultaneously. |
+
+Both scripts share a common CLI:
+
+```text
+--model {mlr,cnn_lstm}   # Choose algorithm (default: mlr)
+--data PATH              # Path to .npy dataset (default points to repository file)
+--sequence-dir PATH      # Pre-generated look-back sequences (CNN-LSTM only)
+--year-column INT        # Index of year column for chronological split (default: 2)
+--no-resume              # Start CNN-LSTM training **from scratch** (ignore checkpoints)
 ```
 
-This will:
-1. Load and split the dataset (training / validation / testing).
-2. Train a separate MLR model for each pollutant.
-3. Train the multi-output CNN+LSTM model.
-4. Generate evaluation plots and save them under `results/`.
-5. Log metrics and artifacts to the current MLflow experiment.
+Example – train a fresh CNN-LSTM model for PM2.5 expert pipeline:
 
-> **CLI Options (Upcoming)** – Argument parsing to run individual models will be added in task 6.4.
+```bash
+python multi_model.py --model cnn_lstm --no-resume
+```
+
+Example – continue training the unified multi-output CNN-LSTM from last checkpoint:
+
+```bash
+python single_model.py --model cnn_lstm
+```
+
+During execution the scripts will:
+
+1. Load and chronologically split the dataset.
+2. (Optional) Replace raw data with sequences from `--sequence-dir` for CNN-LSTM.
+3. Train the chosen model.
+4. Evaluate on validation & test sets, generating plots.
+5. Log everything (parameters, metrics, artifacts, TensorBoard logs, checkpoints) to `results/` and MLflow.
 
 ---
 
-## 6. Experiment Tracking with MLflow
+## 6. Experiment Tracking & Visualisation
 
-Inside the project directory run:
+### MLflow
+
+All runs are logged to the **AirPollutantPrediction** experiment. Launch the UI with:
 
 ```bash
 mlflow ui
 ```
 
-Then open `http://localhost:5000` in your browser to explore runs, parameters, metrics, and saved artifacts.
+Browse `http://localhost:5000` to inspect parameters, metrics, and artefacts.
+
+### TensorBoard
+
+Training curves for CNN-LSTM are also recorded with TensorBoard. Start it via:
+
+```bash
+tensorboard --logdir results/logs
+```
+
+Checkpointed models are stored under `results/checkpoints/<run_id>/` and are automatically resumed unless `--no-resume` is supplied.
 
 ---
 
@@ -109,8 +145,31 @@ pytest -q
 
 ---
 
-## 8. Results
-All generated figures and serialized models are stored under `results/`.
+## 8. Results Directory Layout
+
+```text
+results/
+├── raw_distributions/          # Histograms & time-series slices of raw targets
+├── mlr/                        # Artifacts from MLR experiments
+│   ├── <pollutant>/            # Ozone/, PM2.5/, NO2/ (expert pipelines)
+│   │   ├── density_scatter_*.png
+│   │   ├── residuals_*.png
+│   │   ├── feature_importance_*.png
+│   │   ├── mlr_model_*.pkl
+│   │   └── metrics.json
+├── cnn_lstm/                   # Artifacts from CNN-LSTM experiments
+│   ├── training_history.png
+│   ├── density_scatter/
+│   ├── error_histograms/
+│   └── time_series_slice.png
+├── spatial_maps/
+│   ├── mlr/
+│   └── cnn_lstm/
+├── checkpoints/                # Saved Keras models (auto-resumed)
+└── logs/                       # TensorBoard logs (scalars, graphs)  
+```
+
+You can safely delete sub-folders to free disk space; future runs will recreate them as needed.
 
 ---
 

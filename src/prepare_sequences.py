@@ -4,8 +4,8 @@ import json
 import numpy as np
 import mlflow
 
-from src import data_loader
-from src.utils import set_global_seed
+import data_loader
+from utils import set_global_seed
 
 
 def parse_args() -> argparse.Namespace:
@@ -14,8 +14,8 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument(
         "--data",
-        required=True,
         type=str,
+        default="data/input_with_geo_and_interactions_v2.npy",
         help="Path to the *pre-engineered* 2-D .npy file (45 columns).",
     )
     p.add_argument(

@@ -14,3 +14,5 @@ Training 3: With Feature Engineering using that USGS/DEM data
 - Ozone R2 0.76 with RMSE 5.1
 - PM2.5 and NO2 performance is still subpar -> possible information ceiling
 - Need more information on extreme PM2.5 events (like wildfires, unique meteoroligcal events)
+
+Training 4: Using multiple single-output trained models for individual feature pred.
