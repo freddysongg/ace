@@ -1,12 +1,3 @@
-"""Main entry point for the Air Pollutant Prediction project.
-
-This script will orchestrate the full pipeline once all subtasks in the
-`Develop Main Execution Pipeline` task group (4.0) are completed.
-Currently, it only provides a CLI interface that lets the user specify
-which model to run. Actual data loading, training, and evaluation logic
-will be added in subsequent subtasks (4.2–4.5).
-"""
-
 import argparse
 from pathlib import Path
 import os
@@ -93,18 +84,42 @@ def main() -> None:
             f"Sequence directory parameter provided: {_sdir}. Exists on disk: {seq_dir_exists}."
         )
         if seq_dir_exists:
-            mlflow.log_param("sequence_dir", str(_sdir))
-    mlflow.log_param("sequences_detected", seq_dir_provided and seq_dir_exists)
+            sequence_dir_to_log = str(_sdir)
+        else:
+            sequence_dir_to_log = None
+    sequences_detected_flag = seq_dir_provided and seq_dir_exists
 
     data_path = Path(args.data)
 
     mlflow.set_experiment("AirPollutantPrediction")
 
     with mlflow.start_run(run_name=f"{args.model.upper()}_pipeline"):
+        mlflow.log_param("sequences_detected", sequences_detected_flag)
+        if seq_dir_provided and seq_dir_exists:
+            mlflow.log_param("sequence_dir", sequence_dir_to_log)
+
         mlflow.log_param("model", args.model)
         mlflow.log_param("data_path", str(data_path))
         mlflow.log_param("year_column", args.year_column)
         mlflow.log_param("seed", 42)
+
+        mlflow.log_param("using_prebuilt_sequences", bool(sequences_detected_flag))
+
+
+        if sequences_detected_flag:
+            try:
+                _seq_dir = Path(args.sequence_dir)
+                _xt_path = _seq_dir / "X_train.npy"
+                if _xt_path.exists():
+                    _lookback_dim = np.load(_xt_path, mmap_mode="r").shape[1]
+                    mlflow.log_param("sequence_lookback", int(_lookback_dim))
+            except Exception as _e:  # noqa: BLE001
+                import warnings as _warnings
+
+                _warnings.warn(
+                    f"Could not infer look-back length from sequence files: {_e}",
+                    RuntimeWarning,
+                )
 
         column_names_path = Path("data") / "final_column_names.json"
 
@@ -148,53 +163,46 @@ def main() -> None:
         pollutant_configs = {
             "Ozone": {
                 "target_name": "ozone",
-                "feature_names": [
-                    # Core meteorological drivers
-                    "tasmax_monmean",
-                    "rsds_monmean", 
-                    "windspeed_monmean",
-                    "rel_humid_mean_monmean", 
-                    # Chemical precursors (via PCA)
-                    "pollutant_pc1",
-                    "pollutant_pc2",
-                    # Seasonality is a huge influencer
-                    "month_sin",
-                    "month_cos",
-                ],
+                "feature_names": feature_names_master,  
+                # "feature_names": [
+                #     "tasmax_monmean",
+                #     "rsds_monmean", 
+                #     "windspeed_monmean",
+                #     "rel_humid_mean_monmean", 
+                #     "pollutant_pc1",
+                #     "pollutant_pc2",
+                #     "month_sin",
+                #     "month_cos",
+                # ],
                 "log_transform": True,
             },
             "PM2.5": {
                 "target_name": "pm25_concentration",
-                "feature_names": [
-                    # Engineered interactions for formation & dispersion
-                    "oc_x_tasmax",
-                    "bc_x_windspeed",
-                    # Geospatial features to address spatial errors
-                    "elevation", # Must-have based on maps
-                    "distance_to_coast_km",
-                    "urbanfrac_x_coastdist",
-                    # Source emissions (via PCA)
-                    "pollutant_pc1",
-                    "pollutant_pc2",
-                    "pollutant_pc3",
-                ],
+                "feature_names": feature_names_master,  
+                # "feature_names": [
+                #     "oc_x_tasmax",
+                #     "bc_x_windspeed",
+                #     "elevation", # Must-have based on maps
+                #     "distance_to_coast_km",
+                #     "urbanfrac_x_coastdist",
+                #     "pollutant_pc1",
+                #     "pollutant_pc2",
+                #     "pollutant_pc3",
+                # ],
                 "log_transform": True, 
             },
             "NO2": {
                 "target_name": "no2_concentration",
-                "feature_names": [
-                    # Direct proxies for traffic & human activity
-                    "road_density_m",
-                    "population",
-                    "LCZ_dense_urban",
-                    # Engineered interactions for urban effects
-                    "road_dense_x_LCZ13",
-                    "nox_x_rhmin",
-                    # Key source signal (via PCA)
-                    "pollutant_pc1",
-                    # Dispersion
-                    "windspeed_monmean",
-                ],
+                "feature_names": feature_names_master,  
+                # "feature_names": [
+                #     "road_density_m",
+                #     "population",
+                #     "LCZ_dense_urban",
+                #     "road_dense_x_LCZ13",
+                #     "nox_x_rhmin",
+                #     "pollutant_pc1",
+                #     "windspeed_monmean",
+                # ],
                 "log_transform": True,
             },
         }
@@ -461,3 +469,7 @@ def main() -> None:
                 print(f"Unknown model selection '{args.model}'.")
 
         return
+
+
+if __name__ == "__main__":
+    main()

@@ -644,7 +644,25 @@ def spatial_error_maps_multi(
     n_samples, n_pollutants = errors.shape
 
     if lons.shape[0] != n_samples or lats.shape[0] != n_samples:
-        raise ValueError("Length of lons/lats must match number of rows in errors")
+        min_len = min(lons.shape[0], lats.shape[0], n_samples)
+        if min_len == 0:
+            raise ValueError(
+                "One of lons/lats has zero length; cannot generate spatial maps."
+            )
+
+        import warnings as _warnings
+
+        _warnings.warn(
+            "Mismatch between coordinate and error array lengths detected. "
+            "Trimming arrays to the shortest common length (" + str(min_len) + ") "
+            "to proceed with spatial plotting.",
+            RuntimeWarning,
+        )
+
+        lons = lons[-min_len:]
+        lats = lats[-min_len:]
+        errors = errors[-min_len:, :]
+        n_samples = min_len
 
     if pollutant_names is None:
         pollutant_names = [f"Pollutant {i}" for i in range(n_pollutants)]

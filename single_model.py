@@ -1,12 +1,3 @@
-"""Main entry point for the Air Pollutant Prediction project.
-
-This script will orchestrate the full pipeline once all subtasks in the
-`Develop Main Execution Pipeline` task group (4.0) are completed.
-Currently, it only provides a CLI interface that lets the user specify
-which model to run. Actual data loading, training, and evaluation logic
-will be added in subsequent subtasks (4.2–4.5).
-"""
-
 import argparse
 from pathlib import Path
 import os

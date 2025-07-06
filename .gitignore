@@ -43,3 +43,4 @@ data/
 mlruns/
 results/checkpoints/*
 results/logs/
+Trained Model/
