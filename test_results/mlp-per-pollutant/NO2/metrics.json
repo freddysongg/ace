@@ -1,0 +1,13 @@
+{
+  "test_metrics": {
+    "RMSE": 52314.41015625,
+    "R2": 0.946520984172821,
+    "MAE": 38605.3828125,
+    "Bias": 29308.359375
+  },
+  "pollutant_name": "NO2",
+  "target_index": 2,
+  "scaler_type": "RobustScaler",
+  "log_transform": false,
+  "epochs_trained": 5
+}

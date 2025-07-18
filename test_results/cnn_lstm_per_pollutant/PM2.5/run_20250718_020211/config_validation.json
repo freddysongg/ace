@@ -1,0 +1,16 @@
+{
+  "pollutant_name": "PM2.5",
+  "timestamp": "2025-07-18T02:34:52.974478",
+  "configuration": {
+    "target_index": 1,
+    "use_robust_scaler_targets": true,
+    "log_transform": false,
+    "epochs": 5,
+    "batch_size": 32
+  },
+  "data_shapes": {
+    "original_train": "(6647760, 46)",
+    "reshaped_train": "(6647760, 1, 46)",
+    "target_train": "(6647760, 1)"
+  }
+}

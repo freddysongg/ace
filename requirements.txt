@@ -15,3 +15,5 @@ elevation
 requests 
 geopy 
 pyproj 
+keras-tuner>=1.4.0 
+shap>=0.43.0 

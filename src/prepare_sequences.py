@@ -15,7 +15,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--data",
         type=str,
-        default="data/input_with_geo_and_interactions_v2.npy",
+        default="data/input_with_geo_and_interactions_v3.npy",
         help="Path to the *pre-engineered* 2-D .npy file (45 columns).",
     )
     p.add_argument(
@@ -84,7 +84,7 @@ def main() -> None:
             test,
             feature_columns=feature_idx,
             target_columns=target_idx,
-            log_transform_targets=[0, 2],  # Ozone & NO2
+            log_transform_targets=[1, 2],  # PM2.5 & NO2
         )
 
         X_train, y_train = data_loader.create_lookback_sequences(

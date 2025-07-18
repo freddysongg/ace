@@ -14,9 +14,9 @@ from tqdm.auto import tqdm
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 
-from src.data_loader import load_data, get_field_names
-from src.add_geo_features import add_geospatial_features
-from src.utils import set_global_seed
+from data_loader import load_data, get_field_names
+from add_geo_features import add_geospatial_features
+from utils import set_global_seed
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -27,24 +27,24 @@ def _build_parser() -> argparse.ArgumentParser:
         "--input",
         "-i",
         type=Path,
-        default=Path("data/input_v2_2d.npy"),
+        default=Path("data/NON-GEO_input_v2_2d.npy"),
         help="Path to the raw .npy file containing the dataset.",
     )
     parser.add_argument(
         "--output",
         "-o",
         type=Path,
-        default=Path("data/input_with_geo_and_interactions.npy"),
+        default=Path("data/input_with_geo_and_interactions_v4.npy"),
         help="Where to write the processed dataset (.npy).",
     )
     parser.add_argument(
         "--lat-col",
-        default="lat",
+        default="col_1",
         help="Name of the latitude column in the raw data.",
     )
     parser.add_argument(
         "--lon-col",
-        default="lon",
+        default="col_0",
         help="Name of the longitude column in the raw data.",
     )
     parser.add_argument(
@@ -79,7 +79,19 @@ def main(
     # ---------------------------------------------------------------------
     logging.info("Loading raw data from %s", args.input)
     raw = load_data(args.input)
-    field_names = get_field_names() or [f"col_{i}" for i in range(raw.shape[1])]
+    field_names = get_field_names() or []
+    n_cols = raw.shape[1]
+    if len(field_names) != n_cols:
+        logging.warning(
+            "FIELD_NAMES length (%d) does not match data columns (%d). "
+            "Padding/truncating with generic labels (col_*) to preserve known names.",
+            len(field_names), n_cols,
+        )
+        if len(field_names) < n_cols:
+            field_names = field_names + [f"col_{i}" for i in range(len(field_names), n_cols)]
+        else:
+            field_names = field_names[:n_cols]
+
     df = pd.DataFrame(raw, columns=field_names)
     logging.info("Loaded DataFrame with shape %s", df.shape)
 
@@ -104,6 +116,50 @@ def main(
     tqdm.pandas()
     df = add_geospatial_features(df)
     logging.info("Geospatial features added. New shape: %s", df.shape)
+
+    # ---------------------------------------------------------------------
+    # 3b. Temporal & advanced geographic features 
+    # ---------------------------------------------------------------------
+    logging.info("Adding temporal and advanced geographic features...")
+
+    # 1. Cyclical Month Encoding (robust)
+    if "month" in df.columns:
+        logging.info("-> Generating cyclical month features (sin/cos)...")
+        df["month_sin"] = np.sin(2 * np.pi * df["month"] / 12.0)
+        df["month_cos"] = np.cos(2 * np.pi * df["month"] / 12.0)
+        # It's good practice to drop the original month column
+        df.drop(columns=["month"], inplace=True)
+
+    # 2. Normalized Year
+    if "year" in df.columns and "year_normalized" not in df.columns:
+        logging.info("-> Generating normalized year feature...")
+        scaler = StandardScaler()
+        df["year_normalized"] = scaler.fit_transform(df[["year"]])
+
+    # 3. Season One-Hot Encoding
+    if "month" in df.columns:
+        logging.info("-> Generating season one-hot encoding...")
+        seasons = {
+            12: "Winter", 1: "Winter", 2: "Winter",
+            3: "Spring", 4: "Spring", 5: "Spring",
+            6: "Summer", 7: "Summer", 8: "Summer",
+            9: "Fall", 10: "Fall", 11: "Fall",
+        }
+        df["season"] = df["month"].apply(lambda x: seasons.get(int(x)))
+        season_dummies = pd.get_dummies(df["season"], prefix="season", dtype=int)
+        df = pd.concat([df, season_dummies], axis=1)
+        df.drop(columns=["season"], inplace=True)
+
+    # 4. 3D Geographic Embedding (Cartesian Coordinates)
+    if {"lat", "lon"}.issubset(df.columns):
+        logging.info("-> Generating 3D geographic coordinate embedding (X, Y, Z)...")
+        lat_rad = np.radians(df["lat"])
+        lon_rad = np.radians(df["lon"])
+        df["geo_x"] = np.cos(lat_rad) * np.cos(lon_rad)
+        df["geo_y"] = np.cos(lat_rad) * np.sin(lon_rad)
+        df["geo_z"] = np.sin(lat_rad)
+
+    logging.info("Feature engineering enhancements complete. New shape: %s", df.shape)
 
     # ---------------------------------------------------------------------
     # 4. Manual interaction features (extend as desired)
@@ -142,10 +198,29 @@ def main(
         if {c1, c2}.issubset(df.columns):
             df[new_name] = df[c1] * df[c2]
 
-    # ---------------------------------------------------------------------
-    # 4c. Simplification & noise-reduction transformations (Phase 2)
-    # ---------------------------------------------------------------------
-    # --- Step 1 · Compress highly-collinear pollutant variables via PCA
+    rh_col_candidates = [
+        "rel_humid_mean_monmean",
+        "rel_humid_mean",
+        "rel_humid_monmean",
+    ]
+    so2_col = "SO2"
+    for rh_col in rh_col_candidates:
+        if {so2_col, rh_col}.issubset(df.columns):
+            df["so2_x_rh"] = df[so2_col] * df[rh_col]
+            break 
+
+    extra_cols = [
+        "NH3",
+        "FRP",
+        "modis_hotspot_count",
+        "wind700hPa",
+        "pbl_height",
+        "ENSO_index",
+    ]
+    present_extra = [c for c in extra_cols if c in df.columns]
+    if present_extra:
+        logging.info("Retained additional features: %s", ", ".join(present_extra))
+
     pollutant_cols = [
         "CO",
         "NOx",
@@ -197,19 +272,14 @@ def main(
             columns=["rel_humid_max_monmean", "rel_humid_min_monmean"], inplace=True
         )
 
-    # Remove doubly-derived tasmax feature if present
     if "tasmax_minus_tasmax_minus_tasmin_monmean" in df.columns:
         df.drop(columns=["tasmax_minus_tasmax_minus_tasmin_monmean"], inplace=True)
 
-    # --- Step 4 · Temporal features – cyclic encoding of month & optional year removal
-    if "month" in df.columns:
+    if "month" in df.columns and "month_sin" not in df.columns:
         df["month_sin"] = np.sin(2 * np.pi * df["month"] / 12.0)
         df["month_cos"] = np.cos(2 * np.pi * df["month"] / 12.0)
         df.drop(columns=["month"], inplace=True)
 
-    # If dataset spans a narrow range of years, drop the year column to avoid noise
-    if "year" in df.columns and df["year"].nunique() <= 5:
-        df.drop(columns=["year"], inplace=True)
 
     # ---------------------------------------------------------------------
     # 5. Diagnostics – correlation heat-map

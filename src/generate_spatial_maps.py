@@ -82,7 +82,7 @@ def generate_maps(
         test,
         feature_columns=_FEATURE_IDX,
         target_columns=_TARGET_IDX,
-        log_transform_targets=[0, 2],  # Ozone & NO2
+        log_transform_targets=[1, 2],  # PM2.5 & NO2
     )
 
     if "lons_test" not in proc or "lats_test" not in proc:

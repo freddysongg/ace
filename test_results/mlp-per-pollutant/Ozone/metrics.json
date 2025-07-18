@@ -1,0 +1,13 @@
+{
+  "test_metrics": {
+    "RMSE": 2.593514919281006,
+    "R2": 0.43555355072021484,
+    "MAE": 1.7057923078536987,
+    "Bias": 0.23782743513584137
+  },
+  "pollutant_name": "Ozone",
+  "target_index": 0,
+  "scaler_type": "StandardScaler",
+  "log_transform": false,
+  "epochs_trained": 5
+}

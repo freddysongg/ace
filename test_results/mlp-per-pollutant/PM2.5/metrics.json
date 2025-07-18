@@ -1,0 +1,13 @@
+{
+  "test_metrics": {
+    "RMSE": 19079.7265625,
+    "R2": 0.7747408747673035,
+    "MAE": 9412.6572265625,
+    "Bias": 1785.6063232421875
+  },
+  "pollutant_name": "PM2.5",
+  "target_index": 1,
+  "scaler_type": "RobustScaler",
+  "log_transform": false,
+  "epochs_trained": 5
+}

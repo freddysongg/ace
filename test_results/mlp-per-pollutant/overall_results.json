@@ -1,0 +1,42 @@
+{
+  "approach": "per_pollutant_quick_test",
+  "epochs_per_model": 5,
+  "test_metrics": {
+    "Ozone": {
+      "RMSE": 2.593514919281006,
+      "R2": 0.43555355072021484,
+      "MAE": 1.7057923078536987,
+      "Bias": 0.23782743513584137
+    },
+    "PM2.5": {
+      "RMSE": 19079.7265625,
+      "R2": 0.7747408747673035,
+      "MAE": 9412.6572265625,
+      "Bias": 1785.6063232421875
+    },
+    "NO2": {
+      "RMSE": 52314.41015625,
+      "R2": 0.946520984172821,
+      "MAE": 38605.3828125,
+      "Bias": 29308.359375
+    }
+  },
+  "pollutant_configs": {
+    "Ozone": {
+      "target_index": 0,
+      "use_robust_scaler_targets": false,
+      "log_transform": false
+    },
+    "PM2.5": {
+      "target_index": 1,
+      "use_robust_scaler_targets": true,
+      "log_transform": false
+    },
+    "NO2": {
+      "target_index": 2,
+      "use_robust_scaler_targets": true,
+      "log_transform": false
+    }
+  },
+  "training_completed": true
+}

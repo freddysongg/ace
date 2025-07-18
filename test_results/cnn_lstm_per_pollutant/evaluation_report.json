@@ -1,0 +1,90 @@
+{
+  "timestamp": "2025-07-18T09:37:14.978392",
+  "model_type": "cnn_lstm_per_pollutant_evaluation",
+  "data_file": "data/input_with_geo_and_interactions_v4.npy",
+  "model_directories": {
+    "Ozone": "test_results/cnn_lstm_per_pollutant/Ozone/run_20250718_013019",
+    "PM2.5": "test_results/cnn_lstm_per_pollutant/PM2.5/run_20250718_020211",
+    "NO2": "test_results/cnn_lstm_per_pollutant/NO2/run_20250718_023453"
+  },
+  "pollutant_metrics": {
+    "Ozone": {
+      "validation": {
+        "RMSE": 0.0035495038609951735,
+        "R2": 0.9916096925735474,
+        "MAE": 0.002218116307631135,
+        "Bias": -0.0003199156781192869,
+        "NRMSE": 0.02368692122399807,
+        "CV_RMSE": -0.005135623272508383,
+        "Norm_MAE": -0.0032092963811010122,
+        "Norm_Bias": 0.0004628721217159182
+      },
+      "test": {
+        "RMSE": 0.003615507623180747,
+        "R2": 0.991294801235199,
+        "MAE": 0.0022638964001089334,
+        "Bias": -0.00031855760607868433,
+        "NRMSE": 0.024127384647727013,
+        "CV_RMSE": -0.005231121089309454,
+        "Norm_MAE": -0.0032755336724221706,
+        "Norm_Bias": 0.00046090720570646226
+      }
+    },
+    "PM2.5": {
+      "validation": {
+        "RMSE": 0.0037309827748686075,
+        "R2": 0.9890231490135193,
+        "MAE": 0.002106462139636278,
+        "Bias": 0.0007758166175335646,
+        "NRMSE": 0.028459785506129265,
+        "CV_RMSE": 0.0061704060062766075,
+        "Norm_MAE": 0.003483727341517806,
+        "Norm_Bias": 0.0012830677442252636
+      },
+      "test": {
+        "RMSE": 0.003935009706765413,
+        "R2": 0.9877898097038269,
+        "MAE": 0.002229453530162573,
+        "Bias": 0.0007541670347563922,
+        "NRMSE": 0.03001609444618225,
+        "CV_RMSE": 0.006507831625640392,
+        "Norm_MAE": 0.003687134012579918,
+        "Norm_Bias": 0.0012472630478441715
+      }
+    },
+    "NO2": {
+      "validation": {
+        "RMSE": 342427.875,
+        "R2": 0.9969465732574463,
+        "MAE": 213601.078125,
+        "Bias": -26700.173828125,
+        "NRMSE": 0.00813317857682705,
+        "CV_RMSE": -0.009392435662448406,
+        "Norm_MAE": -0.005858852528035641,
+        "Norm_Bias": 0.0007323576137423515
+      },
+      "test": {
+        "RMSE": 378371.03125,
+        "R2": 0.9962719082832336,
+        "MAE": 233854.015625,
+        "Bias": -30834.515625,
+        "NRMSE": 0.008986882865428925,
+        "CV_RMSE": -0.010378318838775158,
+        "Norm_MAE": -0.006414369214326143,
+        "Norm_Bias": 0.000845758244395256
+      }
+    }
+  },
+  "aggregate_metrics": {
+    "avg_val_rmse": 114142.62742682888,
+    "avg_val_r2": 0.9925264716148376,
+    "avg_test_rmse": 126123.67960017244,
+    "avg_test_r2": 0.9917855064074198
+  },
+  "normalized_metrics_explanation": {
+    "NRMSE": "Normalized RMSE (RMSE / range of true values)",
+    "CV_RMSE": "Coefficient of Variation of RMSE (RMSE / mean of true values)",
+    "Norm_MAE": "Normalized MAE (MAE / mean of true values)",
+    "Norm_Bias": "Normalized Bias (Bias / mean of true values)"
+  }
+}
