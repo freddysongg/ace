@@ -108,7 +108,6 @@ def density_scatter_plot(
     hb = ax.hexbin(y_true, y_pred, gridsize=gridsize, cmap=cmap, mincnt=1)
     fig.colorbar(hb, ax=ax, label="Counts")
 
-    # Reference line
     min_val = min(y_true.min(), y_pred.min())
     max_val = max(y_true.max(), y_pred.max())
     ax.plot([min_val, max_val], [min_val, max_val], "--", color="gray", linewidth=1)
@@ -117,7 +116,6 @@ def density_scatter_plot(
     ax.set_ylabel(f"Predicted {pollutant_name}")
     ax.set_title(f"Predicted vs. Actual for {pollutant_name}")
 
-    # Annotation with R² and RMSE
     text_x = 0.05
     text_y = 0.95
     ax.text(
@@ -251,10 +249,8 @@ def feature_importance_bar_chart(
             "Number of coefficients does not match number of feature names"
         )
 
-    # Compute importance (optionally absolute values)
     importance = np.abs(coefs) if absolute else coefs
 
-    # Select top_n features
     if top_n is not None and top_n < len(feature_names):
         idx = np.argsort(importance)[-top_n:][::-1]
     else:
@@ -387,9 +383,6 @@ def training_history_plot(
 ):
     """Generate a Training History Plot (Loss vs. Epochs).
 
-    This function plots the training and validation loss curves from a Keras
-    *history* object returned by :py-meth:`tensorflow.keras.Model.fit`.
-
     Args:
         history: A Keras History object or a dictionary with keys ``"loss"``
             and optionally ``"val_loss"``.
@@ -462,9 +455,6 @@ def density_scatter_plots_multi(
     figsize: Tuple[int, int] = (6, 6),
 ):
     """Generate density scatter plots for multiple pollutants.
-
-    This is a convenience wrapper around :pyfunc:`density_scatter_plot` that
-    iterates over all pollutants, generating one figure per pollutant.
 
     Args:
         y_true: 2-D array of shape *(n_samples, n_pollutants)* containing ground-truth
@@ -713,12 +703,6 @@ def spatial_error_maps_multi(
 
     return figs_axes
 
-
-# -----------------------------------------------------------------------------
-# Initial Data Vis.
-# -----------------------------------------------------------------------------
-
-
 def raw_target_histograms(
     y_raw: np.ndarray,
     pollutant_names: Optional[list] = None,
@@ -864,7 +848,6 @@ def pred_vs_actual_time_series_slice(
     slice_length = min(slice_length, y_true.shape[0])
     time_axis = np.arange(slice_length)
 
-    # Create a subplot for each pollutant
     fig, axes = plt.subplots(
         n_pollutants, 1, figsize=(figsize[0], figsize[1] * n_pollutants), sharex=True
     )
@@ -947,7 +930,6 @@ def plot_keras_evaluation(
     ax_top.legend()
     ax_top.grid(True, linestyle="--", alpha=0.3)
 
-    # (y_true_f, y_pred_f) already prepared with finite mask
     hb = ax_bot.hexbin(
         y_true_f, y_pred_f, gridsize=gridsize, cmap="viridis", mincnt=1, linewidths=0
     )
@@ -1018,7 +1000,6 @@ def calculate_summary_metrics(
             y_true_f = y_true_col[mask]
             y_pred_f = y_pred_col[mask]
 
-            # --- START: New Normalization Logic ---
             y_range = np.nanmax(y_true_f) - np.nanmin(y_true_f)
             y_mean = np.nanmean(y_true_f)
 
@@ -1033,7 +1014,6 @@ def calculate_summary_metrics(
                 "Bias": raw_bias,
             }
 
-            # Calculate normalized metrics, handling potential division by zero
             if y_range > 0:
                 metrics["NRMSE"] = raw_rmse / y_range
             else:
@@ -1047,7 +1027,6 @@ def calculate_summary_metrics(
                 metrics["CV_RMSE"] = float('nan')
                 metrics["Norm_MAE"] = float('nan')
                 metrics["Norm_Bias"] = float('nan')
-            # --- END: New Normalization Logic ---
 
         all_metrics[name] = metrics
 
@@ -1072,7 +1051,6 @@ def convert_to_json_serializable(obj):
     elif obj is None or isinstance(obj, (str, int, float, bool)):
         return obj
     else:
-        # For any other type, try to convert to string
         return str(obj)
 
 def generate_comparison_metrics_summary(
@@ -1126,7 +1104,6 @@ def generate_comparison_metrics_summary(
         }
     }
     
-    # Calculate aggregate metrics for per-pollutant approach
     val_metrics = per_pollutant_metrics.get("validation_metrics", {})
     test_metrics = per_pollutant_metrics.get("test_metrics", {})
     
@@ -1144,7 +1121,6 @@ def generate_comparison_metrics_summary(
                 summary["per_pollutant_approach"]["aggregate_test"][f"avg_{metric_name.lower()}"] = float(np.nanmean(values))
                 summary["per_pollutant_approach"]["aggregate_test"][f"std_{metric_name.lower()}"] = float(np.nanstd(values))
     
-    # Add comparison with multi-output approach if provided
     if multi_output_metrics:
         summary["multi_output_approach"] = {
             "validation_metrics": multi_output_metrics.get("validation_metrics", {}),
@@ -1153,7 +1129,6 @@ def generate_comparison_metrics_summary(
             "aggregate_test": {}
         }
         
-        # Calculate improvements
         multi_val = multi_output_metrics.get("validation_metrics", {})
         multi_test = multi_output_metrics.get("test_metrics", {})
         
@@ -1165,16 +1140,15 @@ def generate_comparison_metrics_summary(
                     multi_val_metric = multi_val[pollutant].get(metric, float('nan'))
                     
                     if not (np.isnan(per_val) or np.isnan(multi_val_metric)):
-                        if metric in ["RMSE", "MAE", "Bias"]:  # Lower is better
+                        if metric in ["RMSE", "MAE", "Bias"]:
                             improvement = ((multi_val_metric - per_val) / multi_val_metric) * 100
-                        else:  # R2: Higher is better
+                        else: 
                             improvement = ((per_val - multi_val_metric) / multi_val_metric) * 100
                         improvements[f"validation_{metric.lower()}_improvement_pct"] = float(improvement)
                 
                 if improvements:
                     summary["comparison_analysis"]["performance_improvements"][pollutant] = improvements
     
-    # Add statistical insights
     if test_metrics:
         rmse_values = [test_metrics[p].get("RMSE", float('nan')) for p in pollutant_names if p in test_metrics]
         r2_values = [test_metrics[p].get("R2", float('nan')) for p in pollutant_names if p in test_metrics]
@@ -1186,7 +1160,6 @@ def generate_comparison_metrics_summary(
             "r2_range": float(np.nanmax(r2_values) - np.nanmin(r2_values)) if r2_values else None
         }
     
-    # Add advantages of per-pollutant approach
     summary["comparison_analysis"]["per_pollutant_advantages"] = [
         "Tailored preprocessing for each pollutant's data distribution",
         "Ozone uses StandardScaler (optimal for small range, no major outliers)",
@@ -1196,10 +1169,8 @@ def generate_comparison_metrics_summary(
         "Separate model artifacts enable pollutant-specific analysis"
     ]
     
-    # Save summary if path provided
     if save_path:
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
-        # Convert to JSON-serializable format before saving
         serializable_summary = convert_to_json_serializable(summary)
         with open(save_path, 'w') as f:
             json.dump(serializable_summary, f, indent=2)
@@ -1217,7 +1188,7 @@ def shap_summary_plot(
     feature_names: list,
     save_path: Optional[str] = None,
     show: bool = False,
-    background_samples: int = 500,  # Add a new parameter
+    background_samples: int = 500, 
 ):
     """Generate and (optionally) save a SHAP summary plot.
 
@@ -1243,26 +1214,19 @@ def shap_summary_plot(
 
     print("Generating SHAP summary plot…")
 
-    # --- START OF MODIFIED BLOCK ---
-    # 1. Create a representative background dataset using a random sample
-    # This is more robust than just taking the first N samples.
     if X_train.shape[0] > background_samples:
         background_data = X_train[np.random.choice(X_train.shape[0], background_samples, replace=False)]
     else:
         background_data = X_train
 
-    # 2. Use GradientExplainer, which is well-suited for Keras models
     explainer = shap.GradientExplainer(model, background_data)
 
-    # 3. Calculate SHAP values on a larger, separate sample for plotting
     if X_train.shape[0] > 2000:
-        # Use up to 2000 samples for the plot itself
         plot_data = X_train[np.random.choice(X_train.shape[0], 2000, replace=False)]
     else:
         plot_data = X_train
 
     shap_values = explainer.shap_values(plot_data)
-    # --- END OF MODIFIED BLOCK ---
 
     shap_vals_plot = shap_values[0] if isinstance(shap_values, list) else shap_values
 

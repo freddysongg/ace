@@ -14,7 +14,6 @@ def main():
     print("🔍 MLP Per-Pollutant Evaluation Script")
     print("=" * 50)
     
-    # Check if models exist
     results_dir = Path("results/mlp-per-pollutant")
     model_paths = [
         results_dir / "Ozone" / "mlp_model.keras",

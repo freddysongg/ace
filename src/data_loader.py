@@ -128,11 +128,6 @@ def chronological_split(
     Validation: 2013
     Testing: 2014-2015
 
-    You can override these year ranges via keyword arguments (*train_start*,
-    *train_end*, *val_year*, *test_start*, *test_end*) to implement a sliding
-    window or other custom splits. Set *test_end* to ``None`` to include all
-    years ≥ *test_start* in the test set.
-
     Args:
         data (np.ndarray): Input dataset
         year_column_index (int): Index of the column containing year information
@@ -267,7 +262,7 @@ def preprocess_data(
         test_data (np.ndarray): Test dataset
         feature_columns (list): Indices of feature columns
         target_columns (list): Indices of target columns (pollutants)
-        target_column_index (int, optional): Index within target_columns to process 
+        target_column_index (int, optional): Index within target_columns to process
             as single pollutant. If provided, only this target will be processed,
             resulting in 1D target arrays. Maintains backward compatibility when None.
         lat_col_name (str): Column name for latitude (used if *FIELD_NAMES* is available).
@@ -300,15 +295,13 @@ def preprocess_data(
     X_train_raw = train_data[:, feature_columns]
     y_train_raw = train_data[:, target_columns]
 
-    # Handle single-pollutant processing
     if target_column_index is not None:
         if target_column_index < 0 or target_column_index >= len(target_columns):
             raise IndexError(
                 f"target_column_index {target_column_index} is out of bounds for target_columns of length {len(target_columns)}"
             )
         print(f"Processing single pollutant at target index {target_column_index}")
-        # Extract single target column, keeping as 2D for compatibility with existing logic
-        y_train_raw = y_train_raw[:, target_column_index:target_column_index+1]
+        y_train_raw = y_train_raw[:, target_column_index : target_column_index + 1]
 
     def _filter_finite(X: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         mask = np.isfinite(X).all(axis=1) & np.isfinite(y).all(axis=1)
@@ -321,20 +314,18 @@ def preprocess_data(
 
     X_val_raw = val_data[:, feature_columns]
     y_val_raw = val_data[:, target_columns]
-    
-    # Apply single-pollutant processing to validation data
+
     if target_column_index is not None:
-        y_val_raw = y_val_raw[:, target_column_index:target_column_index+1]
-    
+        y_val_raw = y_val_raw[:, target_column_index : target_column_index + 1]
+
     X_val_raw, y_val_raw = _filter_finite(X_val_raw, y_val_raw)
 
     X_test_raw = test_data[:, feature_columns]
     y_test_raw = test_data[:, target_columns]
-    
-    # Apply single-pollutant processing to test data
+
     if target_column_index is not None:
-        y_test_raw = y_test_raw[:, target_column_index:target_column_index+1]
-    
+        y_test_raw = y_test_raw[:, target_column_index : target_column_index + 1]
+
     X_test_raw, y_test_raw = _filter_finite(X_test_raw, y_test_raw)
 
     if log_transform_targets:
@@ -343,22 +334,20 @@ def preprocess_data(
         )
 
         for tgt_idx in log_transform_targets:
-            # Handle single-pollutant case: check if the log transform applies to our selected pollutant
             if target_column_index is not None:
                 if tgt_idx == target_column_index:
-                    # Apply log transform to the single target (now at index 0)
                     y_train_raw[:, 0] = np.log1p(np.maximum(0, y_train_raw[:, 0]))
                     y_val_raw[:, 0] = np.log1p(np.maximum(0, y_val_raw[:, 0]))
                     y_test_raw[:, 0] = np.log1p(np.maximum(0, y_test_raw[:, 0]))
-                # Skip if log transform doesn't apply to our selected pollutant
             else:
-                # Multi-pollutant case: original logic
                 if tgt_idx < 0 or tgt_idx >= len(target_columns):
                     raise IndexError(
                         f"Target index {tgt_idx} is out of bounds for target_columns of length {len(target_columns)}"
                     )
 
-                y_train_raw[:, tgt_idx] = np.log1p(np.maximum(0, y_train_raw[:, tgt_idx]))
+                y_train_raw[:, tgt_idx] = np.log1p(
+                    np.maximum(0, y_train_raw[:, tgt_idx])
+                )
                 y_val_raw[:, tgt_idx] = np.log1p(np.maximum(0, y_val_raw[:, tgt_idx]))
                 y_test_raw[:, tgt_idx] = np.log1p(np.maximum(0, y_test_raw[:, tgt_idx]))
 
@@ -403,12 +392,9 @@ def preprocess_data(
         lat_col_idx = V2_FIELD_NAMES.index(lat_col_name)
         lon_col_idx = V2_FIELD_NAMES.index(lon_col_name)
 
-        # For spatial plotting, use the same filtering logic as applied to the processed data
         if target_column_index is not None:
-            # Single-pollutant case: filter based on the selected target column
             target_cols_for_filtering = [target_columns[target_column_index]]
         else:
-            # Multi-pollutant case: use all target columns
             target_cols_for_filtering = target_columns
 
         mask_test = np.isfinite(test_data[:, feature_columns]).all(
@@ -464,10 +450,6 @@ def create_lookback_sequences(
     step: int = 1,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Generate supervised sequences for sequence models.
-
-    Each output sample contains *lookback* consecutive rows of *features*,
-    ending *just before* the corresponding row of *targets* that serves as the
-    prediction label.
 
     Parameters
     ----------

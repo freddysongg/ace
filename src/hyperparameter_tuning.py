@@ -13,10 +13,10 @@ def _build_mlp_model(hp: kt.HyperParameters, input_dim: int, num_outputs: int) -
 
     The search space is intentionally kept compact but expressive:
 
-    * *hidden_layers* – number of hidden Dense layers (1 to 5)
-    * *units_i* – units in the *i*-th hidden layer, 32–256 with step 32
-    * *dropout* – shared dropout rate across layers, 0–0.5 (step 0.1)
-    * *learning_rate* – log-uniform between 1e-4 and 1e-2
+    * *hidden_layers*  number of hidden Dense layers (1 to 5)
+    * *units_i* units in the *i*-th hidden layer, 32-256 with step 32
+    * *dropout*  shared dropout rate across layers, 0-0.5 (step 0.1)
+    * *learning_rate* log-uniform between 1e-4 and 1e-2
     """
     hidden_layers = hp.Int("hidden_layers", min_value=1, max_value=3, step=1)
 
@@ -88,9 +88,9 @@ def tune_mlp_hyperparameters(
     Returns
     -------
     best_hps, best_model, tuner
-        *best_hps* – best performing hyper-parameters;
-        *best_model* – the corresponding trained Keras model;
-        *tuner* – the Keras Tuner instance for inspection.
+        *best_hps* - best performing hyper-parameters;
+        *best_model* - the corresponding trained Keras model;
+        *tuner* - the Keras Tuner instance for inspection.
     """
     import numpy as np
 

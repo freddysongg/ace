@@ -7,7 +7,6 @@ import numpy as np
 from pathlib import Path
 import sys
 
-# Add src to path
 sys.path.append('.')
 
 from src import data_loader
@@ -16,7 +15,6 @@ def test_data_loading():
     """Test data loading and preprocessing."""
     print("Testing data loading and preprocessing...")
     
-    # Load data
     data_path = Path("data/input_with_geo_and_interactions_v4.npy")
     if not data_path.exists():
         print(f"ERROR: Data file not found: {data_path}")
@@ -25,20 +23,17 @@ def test_data_loading():
     raw_data = np.load(data_path)
     print(f"✓ Raw data loaded: {raw_data.shape}")
     
-    # Split data
     train_data, val_data, test_data = data_loader.chronological_split(
         raw_data, year_column_index=2
     )
     print(f"✓ Data split - Train: {train_data.shape}, Val: {val_data.shape}, Test: {test_data.shape}")
     
-    # Define columns
     feature_indices = list(range(3, raw_data.shape[1] - 3))
     target_indices = [raw_data.shape[1] - 3, raw_data.shape[1] - 2, raw_data.shape[1] - 1]
     
     print(f"✓ Feature columns: {len(feature_indices)}")
     print(f"✓ Target columns: {target_indices}")
     
-    # Test per-pollutant preprocessing
     pollutant_configs = {
         "Ozone": {"target_index": 0, "use_robust_scaler_targets": False},
         "PM2.5": {"target_index": 1, "use_robust_scaler_targets": True},
@@ -66,7 +61,6 @@ def test_data_loading():
             print(f"    X_val: {single_pollutant_data['X_val'].shape}")
             print(f"    y_val: {single_pollutant_data['y_val'].shape}")
             
-            # Test sequence creation
             X_train_seq, y_train_seq = data_loader.create_lookback_sequences(
                 single_pollutant_data["X_train"],
                 single_pollutant_data["y_train"],
@@ -92,8 +86,7 @@ def test_model_import():
         from src.models import get_cnn_lstm_model
         print("✓ CNN+LSTM model import successful")
         
-        # Test model creation
-        input_shape = (7, 100)  # Example shape
+        input_shape = (7, 100)  
         num_outputs = 1
         model = get_cnn_lstm_model(input_shape, num_outputs)
         print(f"✓ Model created with input shape {input_shape} and {num_outputs} outputs")

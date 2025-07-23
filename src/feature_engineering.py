@@ -70,7 +70,6 @@ def _build_parser() -> argparse.ArgumentParser:
 def main(
     args: argparse.Namespace,
 ) -> None:  # noqa: C901 – function is intentionally broad
-    # Configure logging & reproducibility
     set_global_seed(args.seed)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
@@ -320,10 +319,6 @@ def main(
     logging.info("Saved final column names -> %s", column_names_path)
     logging.info("Feature-engineering pipeline completed ✅")
 
-
-# -----------------------------------------------------------------------------
-# Entry-point guard
-# -----------------------------------------------------------------------------
 
 if __name__ == "__main__":
     parser = _build_parser()

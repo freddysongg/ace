@@ -37,11 +37,9 @@ class SequenceDataGenerator(tf.keras.utils.Sequence):
         self.batch_size = batch_size
         self.shuffle = shuffle
         
-        # Calculate valid indices for sequence generation
         self.valid_indices = np.arange(lookback, len(X), step)
         self.n_samples = len(self.valid_indices)
         
-        # Initialize indices
         self.on_epoch_end()
     
     def __len__(self):
@@ -50,21 +48,17 @@ class SequenceDataGenerator(tf.keras.utils.Sequence):
     
     def __getitem__(self, index):
         """Generate one batch of data."""
-        # Get batch indices
         start_idx = index * self.batch_size
         end_idx = min((index + 1) * self.batch_size, self.n_samples)
         batch_indices = self.indices[start_idx:end_idx]
         
-        # Generate sequences for this batch
         actual_batch_size = len(batch_indices)
         X_batch = np.empty((actual_batch_size, self.lookback, self.X.shape[1]), dtype=np.float32)
         y_batch = np.empty((actual_batch_size, self.y.shape[1]), dtype=np.float32)
         
         for i, idx in enumerate(batch_indices):
-            # Get the actual data index
             data_idx = self.valid_indices[idx]
             
-            # Create sequence
             X_batch[i] = self.X[data_idx - self.lookback:data_idx]
             y_batch[i] = self.y[data_idx]
         

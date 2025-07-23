@@ -606,7 +606,6 @@ def main() -> None:
         elif args.model == "mlp":
             print("\n==================== MLP Training ====================")
 
-            # Per-pollutant configuration system
             pollutant_configs = {
                 "Ozone": {
                     "target_index": 0,
@@ -626,10 +625,8 @@ def main() -> None:
             }
 
             if args.eval_only:
-                # -------------------- Load Saved Models --------------------
-                import tensorflow as tf  # local import to avoid unnecessary TF load when not needed
+                import tensorflow as tf 
                 
-                # For eval-only mode, we need to load all three per-pollutant models
                 pollutant_models = {}
                 pollutant_histories = {}
                 
@@ -645,11 +642,9 @@ def main() -> None:
                     pollutant_models[pollutant_name] = tf.keras.models.load_model(model_path, compile=False)
                     pollutant_histories[pollutant_name] = {"history": {}}
                 
-                # For backward compatibility, set model to the first pollutant model
                 model = pollutant_models["Ozone"]
                 history = pollutant_histories["Ozone"]
             else:
-                # -------------------- Train Per-Pollutant Models --------------------
                 import gc
                 import tensorflow as tf
                 
@@ -729,9 +724,7 @@ def main() -> None:
                 "\n==================== MLP Evaluation (Test Set) ===================="
             )
             
-            # For per-pollutant models, we need to combine predictions from all three models
             if not args.eval_only:
-                # Training mode: use per-pollutant processed data and models
                 y_pred_val_combined = []
                 y_pred_test_combined = []
                 y_val_raw_combined = []
@@ -741,22 +734,18 @@ def main() -> None:
                     single_data = pollutant_processed_data[pollutant_name]
                     single_model = pollutant_models[pollutant_name]
                     
-                    # Get predictions for this pollutant
                     y_pred_val_single = single_model.predict(single_data["X_val"])
                     y_pred_test_single = single_model.predict(single_data["X_test"])
                     
-                    # Ensure predictions are 1D for single-pollutant models
                     if y_pred_val_single.ndim > 1:
                         y_pred_val_single = y_pred_val_single.ravel()
                     if y_pred_test_single.ndim > 1:
                         y_pred_test_single = y_pred_test_single.ravel()
                     
-                    # Transform back to original scale
                     target_scaler = single_data["target_scaler"]
                     y_pred_val_orig = target_scaler.inverse_transform(y_pred_val_single.reshape(-1, 1)).ravel()
                     y_pred_test_orig = target_scaler.inverse_transform(y_pred_test_single.reshape(-1, 1)).ravel()
                     
-                    # Get raw targets for this pollutant
                     y_val_raw_single = single_data["y_val_raw"].ravel()
                     y_test_raw_single = single_data["y_test_raw"].ravel()
                     
@@ -765,17 +754,14 @@ def main() -> None:
                     y_val_raw_combined.append(y_val_raw_single)
                     y_test_raw_combined.append(y_test_raw_single)
                 
-                # Stack predictions to create multi-pollutant arrays for evaluation functions
                 y_pred_val_orig = np.column_stack(y_pred_val_combined)
                 y_pred_test_orig = np.column_stack(y_pred_test_combined)
                 y_val_raw = np.column_stack(y_val_raw_combined)
                 y_test_raw = np.column_stack(y_test_raw_combined)
                 
-                # Use the first pollutant's processed data for coordinate information
                 processed_data = pollutant_processed_data["Ozone"]
                 
             else:
-                # Eval-only mode: combine predictions from all three loaded models
                 y_pred_val_combined = []
                 y_pred_test_combined = []
                 y_val_raw_combined = []
@@ -785,34 +771,29 @@ def main() -> None:
                     config = pollutant_configs[pollutant_name]
                     single_model = pollutant_models[pollutant_name]
                     
-                    # Preprocess data for this specific pollutant
                     single_pollutant_data = data_loader.preprocess_data(
                         train_data,
                         val_data,
                         test_data,
                         feature_columns=feature_indices,
                         target_columns=target_indices,
-                        target_column_index=config['target_index'],  # Single pollutant processing
-                        log_transform_targets=None,  # No log transformation
+                        target_column_index=config['target_index'],  
+                        log_transform_targets=None,  
                         use_robust_scaler_targets=config['use_robust_scaler_targets'],
                     )
                     
-                    # Get predictions for this pollutant
                     y_pred_val_single = single_model.predict(single_pollutant_data["X_val"])
                     y_pred_test_single = single_model.predict(single_pollutant_data["X_test"])
                     
-                    # Ensure predictions are 1D for single-pollutant models
                     if y_pred_val_single.ndim > 1:
                         y_pred_val_single = y_pred_val_single.ravel()
                     if y_pred_test_single.ndim > 1:
                         y_pred_test_single = y_pred_test_single.ravel()
                     
-                    # Transform back to original scale
                     target_scaler = single_pollutant_data["target_scaler"]
                     y_pred_val_orig = target_scaler.inverse_transform(y_pred_val_single.reshape(-1, 1)).ravel()
                     y_pred_test_orig = target_scaler.inverse_transform(y_pred_test_single.reshape(-1, 1)).ravel()
                     
-                    # Get raw targets for this pollutant
                     y_val_raw_single = single_pollutant_data["y_val_raw"].ravel()
                     y_test_raw_single = single_pollutant_data["y_test_raw"].ravel()
                     
@@ -821,13 +802,11 @@ def main() -> None:
                     y_val_raw_combined.append(y_val_raw_single)
                     y_test_raw_combined.append(y_test_raw_single)
                 
-                # Stack predictions to create multi-pollutant arrays for evaluation functions
                 y_pred_val_orig = np.column_stack(y_pred_val_combined)
                 y_pred_test_orig = np.column_stack(y_pred_test_combined)
                 y_val_raw = np.column_stack(y_val_raw_combined)
                 y_test_raw = np.column_stack(y_test_raw_combined)
                 
-                # Use the last processed data for coordinate information
                 processed_data = single_pollutant_data
 
             pollutant_names = ["Ozone", "PM2.5", "NO2"]
@@ -841,13 +820,11 @@ def main() -> None:
             print("\n===== Final Evaluation Metrics =====")
             for pollutant in pollutant_names:
                 print(f"\n--- {pollutant} ---")
-                # Raw Metrics
                 print(f"  Test R²:         {test_metrics[pollutant]['R2']:.4f}")
                 print(f"  Test RMSE:       {test_metrics[pollutant]['RMSE']:.2f}")
                 print(f"  Test MAE:        {test_metrics[pollutant]['MAE']:.2f}")
                 print(f"  Test Bias:       {test_metrics[pollutant]['Bias']:.2f}")
                 
-                # --- START: New Normalized Metrics Block ---
                 print("  ----------- Normalized -----------")
                 nrmse_pct = test_metrics[pollutant].get('NRMSE', float('nan')) * 100
                 cv_rmse_pct = test_metrics[pollutant].get('CV_RMSE', float('nan')) * 100
@@ -857,23 +834,18 @@ def main() -> None:
                 print(f"  NRMSE (% of Range):   {nrmse_pct:.2f}%")
                 print(f"  CV(RMSE) (% of Mean): {cv_rmse_pct:.2f}%")
                 print(f"  Norm MAE (% of Mean): {norm_mae_pct:.2f}%")
-                print(f"  Norm Bias (% of Mean):{norm_bias_pct:+.2f}%")  # Added '+' to show direction
-                # --- END: New Normalized Metrics Block ---
+                print(f"  Norm Bias (% of Mean):{norm_bias_pct:+.2f}%")  
 
-            # Enhanced MLflow logging for per-pollutant models
             print("\n===== MLflow Logging =====")
             
-            # Log individual pollutant metrics
             for pollutant in pollutant_names:
                 pollutant_key = pollutant.lower().replace(".", "").replace(" ", "_")
                 
-                # Validation metrics
                 mlflow.log_metric(f"val_rmse_{pollutant_key}", val_metrics[pollutant]['RMSE'])
                 mlflow.log_metric(f"val_r2_{pollutant_key}", val_metrics[pollutant]['R2'])
                 mlflow.log_metric(f"val_mae_{pollutant_key}", val_metrics[pollutant]['MAE'])
                 mlflow.log_metric(f"val_bias_{pollutant_key}", val_metrics[pollutant]['Bias'])
                 
-                # Test metrics
                 mlflow.log_metric(f"test_rmse_{pollutant_key}", test_metrics[pollutant]['RMSE'])
                 mlflow.log_metric(f"test_r2_{pollutant_key}", test_metrics[pollutant]['R2'])
                 mlflow.log_metric(f"test_mae_{pollutant_key}", test_metrics[pollutant]['MAE'])
@@ -881,7 +853,6 @@ def main() -> None:
                 
                 print(f"Logged metrics for {pollutant}")
             
-            # Log aggregate metrics across all pollutants
             avg_val_rmse = np.mean([val_metrics[p]['RMSE'] for p in pollutant_names])
             avg_val_r2 = np.mean([val_metrics[p]['R2'] for p in pollutant_names])
             avg_val_mae = np.mean([val_metrics[p]['MAE'] for p in pollutant_names])
@@ -904,7 +875,6 @@ def main() -> None:
             
             print("Logged aggregate metrics across all pollutants")
             
-            # Log per-pollutant model configuration
             if not args.eval_only:
                 for pollutant_name, config in pollutant_configs.items():
                     pollutant_key = pollutant_name.lower().replace(".", "").replace(" ", "_")
@@ -919,25 +889,21 @@ def main() -> None:
             
             print("MLflow logging completed")
             
-            # Generate comprehensive comparison metrics summary
             print("\n===== Generating Comparison Metrics Summary =====")
             
-            # Prepare per-pollutant metrics structure for comparison function
             per_pollutant_metrics_summary = {
                 "validation_metrics": val_metrics,
                 "test_metrics": test_metrics
             }
             
-            # Generate and save comparison summary
             comparison_summary_path = results_dir / "mlp-per-pollutant" / "comparison_metrics_summary.json"
             comparison_summary = evaluate.generate_comparison_metrics_summary(
                 per_pollutant_metrics=per_pollutant_metrics_summary,
-                multi_output_metrics=None,  # Could be added later for comparison with baseline
+                multi_output_metrics=None,  
                 save_path=str(comparison_summary_path),
                 pollutant_names=pollutant_names
             )
             
-            # Log key comparison metrics to MLflow
             mlflow.log_metric("performance_variability_rmse", comparison_summary["comparison_analysis"]["statistical_summary"].get("rmse_coefficient_of_variation", 0.0))
             mlflow.log_metric("performance_range_r2", comparison_summary["comparison_analysis"]["statistical_summary"].get("r2_range", 0.0))
             
@@ -960,9 +926,7 @@ def main() -> None:
                 and history.history.get("loss")
             )
 
-            # ---------- SHAP & permutation importance ----------
             if has_history:
-                # SHAP (optional, can be slow) - use first pollutant model for demonstration
                 try:
                     first_model = pollutant_models["Ozone"] if not args.eval_only else model
                     X_train_subset = processed_data["X_train"][:1000]
@@ -975,10 +939,8 @@ def main() -> None:
                 except Exception as exc:
                     print(f"SHAP summary plot skipped: {exc}")
 
-                # Permutation importance (single target for speed) - use Ozone model
                 try:
                     ozone_model = pollutant_models["Ozone"] if not args.eval_only else model
-                    # For per-pollutant models, use the single-pollutant target data
                     if not args.eval_only:
                         ozone_data = pollutant_processed_data["Ozone"]
                         y_val_single = ozone_data["y_val"].ravel()
@@ -1000,10 +962,8 @@ def main() -> None:
             else:
                 print("Skipped SHAP & permutation importance (no training history).")
 
-            # ---------- per-pollutant RMSE/R² panel ----------
             if has_history and history.history.get("mse"):
                 for i, pollutant in enumerate(pollutant_names):
-                    # Use individual pollutant history for per-pollutant models
                     if not args.eval_only:
                         pollutant_history = pollutant_histories[pollutant]
                         if (pollutant_history and 
@@ -1054,7 +1014,6 @@ def main() -> None:
 
                 errors_matrix = y_pred_test_orig - y_test_raw
 
-                # Use per-pollutant directory name to distinguish from multi-output models
                 spatial_dir = results_dir / "spatial_maps" / "mlp-per-pollutant"
                 spatial_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1068,31 +1027,25 @@ def main() -> None:
 
                 print(f"Spatial error maps saved to '{spatial_dir}'.")
 
-            # Save per-pollutant models and artifacts
             if not args.eval_only:
-                # Training mode: save each pollutant model separately
                 for pollutant_name in ["Ozone", "PM2.5", "NO2"]:
                     pollutant_dir = results_dir / "mlp-per-pollutant" / pollutant_name
                     pollutant_dir.mkdir(parents=True, exist_ok=True)
                     
-                    # Get individual model, history, and data for this pollutant
                     single_model = pollutant_models[pollutant_name]
                     single_history = pollutant_histories[pollutant_name]
                     single_data = pollutant_processed_data[pollutant_name]
                     config = pollutant_configs[pollutant_name]
                     
-                    # Save individual model
                     single_model.save(pollutant_dir / "mlp_model.keras")
                     print(f"Saved {pollutant_name} model to {pollutant_dir / 'mlp_model.keras'}")
                     
-                    # Calculate individual pollutant metrics
                     pollutant_index = config["target_index"]
                     y_val_single = y_val_raw[:, pollutant_index]
                     y_test_single = y_test_raw[:, pollutant_index]
                     y_pred_val_single = y_pred_val_orig[:, pollutant_index]
                     y_pred_test_single = y_pred_test_orig[:, pollutant_index]
                     
-                    # Calculate metrics for this pollutant
                     single_val_metrics = evaluate.calculate_summary_metrics(
                         y_val_single.reshape(-1, 1), 
                         y_pred_val_single.reshape(-1, 1), 
@@ -1104,7 +1057,6 @@ def main() -> None:
                         [pollutant_name]
                     )
                     
-                    # Save individual metrics
                     metrics_data = {
                         "validation_metrics": single_val_metrics[pollutant_name],
                         "test_metrics": single_test_metrics[pollutant_name],
@@ -1115,13 +1067,11 @@ def main() -> None:
                     }
                     
                     with open(pollutant_dir / "metrics.json", "w") as f:
-                        # Convert to JSON-serializable format before saving
                         serializable_metrics = evaluate.convert_to_json_serializable(metrics_data)
                         json.dump(serializable_metrics, f, indent=2)
                     
                     print(f"Saved {pollutant_name} metrics: Test RMSE={single_test_metrics[pollutant_name]['RMSE']:.4f}, R²={single_test_metrics[pollutant_name]['R2']:.4f}")
                     
-                    # Save preprocessing configuration metadata for this pollutant
                     try:
                         import pickle as _pkl
                         
@@ -1160,17 +1110,14 @@ def main() -> None:
                     with open(pollutant_dir / "training_history.json", "w") as f:
                         json.dump(hist_serializable, f, indent=2)
                     
-                    # Generate individual pollutant evaluation plots
                     print(f"Generating evaluation plots for {pollutant_name}...")
                     
-                    # Create subdirectories for individual pollutant plots
                     density_dir = pollutant_dir / "density_scatter"
                     density_dir.mkdir(parents=True, exist_ok=True)
                     
                     error_dir = pollutant_dir / "error_histograms"
                     error_dir.mkdir(parents=True, exist_ok=True)
                     
-                    # Generate density scatter plot for this pollutant
                     n_samples_total = y_test_single.shape[0]
                     sample_size = min(5000, n_samples_total)
                     sample_idx = np.random.choice(n_samples_total, sample_size, replace=False)
@@ -1182,7 +1129,6 @@ def main() -> None:
                         save_path=str(density_dir / f"density_scatter_{pollutant_name.lower().replace('.', '')}.png")
                     )
                     
-                    # Generate error histogram for this pollutant
                     errors_single = y_pred_test_single - y_test_single
                     
                     plt.figure(figsize=(8, 6))
@@ -1196,7 +1142,6 @@ def main() -> None:
                     plt.savefig(error_path, dpi=150, bbox_inches='tight')
                     plt.close()
                     
-                    # Generate time series comparison for this pollutant
                     evaluate.pred_vs_actual_time_series_slice(
                         y_test_single.reshape(-1, 1),
                         y_pred_test_single.reshape(-1, 1),
@@ -1219,7 +1164,6 @@ def main() -> None:
                     print(f"│   │   ├── error_histograms/")
                     print(f"│   │   └── time_series_{pollutant_name.lower().replace('.', '')}.png")
             else:
-                # Eval-only mode: maintain backward compatibility by saving the first model
                 model.save(mlp_dir / "mlp_model.keras")
                 
                 try:
@@ -1240,12 +1184,9 @@ def main() -> None:
                 except Exception as _e:  # noqa: BLE001
                     print(f"Warning: failed to save preprocessing metadata – { _e }")
 
-                # Handle both dict and Keras History object types
                 if hasattr(history, "history"):
-                    # Keras History object
                     hist_data = history.history
                 else:
-                    # Dictionary (from eval-only mode)
                     hist_data = history.get("history", {})
 
                 hist_serializable = {

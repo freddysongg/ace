@@ -497,17 +497,13 @@ def train_cnn_lstm_model(
         Tuple of (trained_model, history)
     """
     if use_generator:
-        # For generator mode, expect 2D input (samples, features)
         if len(X_train.shape) != 2:
             raise ValueError(
                 "X_train should be 2-dimensional (samples, features) when using generator mode"
             )
-        # Set a default lookback for sequence generation
         lookback = 7
-        # Calculate effective input shape for model building
         input_shape = (lookback, X_train.shape[1])
     else:
-        # For pre-built sequences, expect 3D input
         if len(X_train.shape) < 3:
             raise ValueError(
                 "X_train should be 3-dimensional (samples, timesteps, features) for CNN+LSTM model"
@@ -564,7 +560,7 @@ def train_cnn_lstm_model(
                 input_shape=input_shape, num_outputs=num_outputs
             )
     else:
-        print("Resume disabled – starting training from scratch (fresh model).")
+        print("Resume disabled - starting training from scratch (fresh model).")
         builder_fn = model_builder or get_cnn_lstm_model
         model = builder_fn(
             input_shape=input_shape, num_outputs=num_outputs
@@ -626,7 +622,6 @@ def train_cnn_lstm_model(
 
     csv_logger_cb = CSVLogger(str(tb_log_dir / "training.csv"))
     
-    # Memory monitoring callback (optional)
     if PSUTIL_AVAILABLE:
         class MemoryMonitorCallback(tf.keras.callbacks.Callback):
             def __init__(self):
@@ -637,9 +632,9 @@ def train_cnn_lstm_model(
                 memory_info = self.process.memory_info()
                 memory_gb = memory_info.rss / 1024**3
                 print(f"Epoch {epoch + 1}: Memory usage: {memory_gb:.2f} GB")
-                if memory_gb > 12:  # Warning if using more than 12GB
+                if memory_gb > 12: 
                     print(f"WARNING: High memory usage detected: {memory_gb:.2f} GB")
-                    gc.collect()  # Force garbage collection
+                    gc.collect()  
         
         memory_monitor_cb = MemoryMonitorCallback()
     else:
@@ -660,7 +655,6 @@ def train_cnn_lstm_model(
         callbacks.append(memory_monitor_cb)
 
     if use_generator:
-        # Filter out non-finite samples for generator mode
         def _finite_mask_2d(features: np.ndarray, targets: np.ndarray) -> np.ndarray:
             feat_mask = np.all(np.isfinite(features), axis=1)
             targ_mask = np.all(np.isfinite(targets), axis=1)
@@ -687,7 +681,6 @@ def train_cnn_lstm_model(
         X_train_clean, y_train_clean = X_train[train_mask], y_train[train_mask]
         X_val_clean, y_val_clean = X_val[val_mask], y_val[val_mask]
 
-        # Create data generators
         train_generator = SequenceDataGenerator(
             X_train_clean, y_train_clean,
             lookback=lookback,
@@ -704,13 +697,11 @@ def train_cnn_lstm_model(
         print(f"Training with generator: {len(train_generator)} batches per epoch")
         print(f"Validation with generator: {len(val_generator)} batches per epoch")
         
-        # Monitor memory usage (if available)
         if PSUTIL_AVAILABLE:
             process = psutil.Process()
             memory_info = process.memory_info()
             print(f"Memory usage before training: {memory_info.rss / 1024**3:.2f} GB")
         
-        # Force garbage collection
         gc.collect()
 
         history = model.fit(
@@ -721,7 +712,6 @@ def train_cnn_lstm_model(
             verbose=1,
         )
     else:
-        # Original approach for pre-built sequences
         def _finite_mask(features: np.ndarray, targets: np.ndarray) -> np.ndarray:
             feat_mask = np.all(np.isfinite(features), axis=(1, 2))
             targ_mask = np.all(np.isfinite(targets), axis=1)
@@ -860,7 +850,6 @@ def train_single_pollutant_cnn_lstm_model(
     print(f"Training single-pollutant CNN+LSTM model for {pollutant_name}")
     print(f"Input shape: {X_train.shape}, Target shape: {y_train.shape}")
     
-    # Ensure targets are 1D for single-pollutant training
     if y_train.ndim > 1:
         if y_train.shape[1] == 1:
             y_train = y_train.ravel()
@@ -868,7 +857,6 @@ def train_single_pollutant_cnn_lstm_model(
         else:
             raise ValueError(f"Expected single-pollutant targets, got shape {y_train.shape}")
     
-    # Validate input shapes
     if use_generator:
         if len(X_train.shape) != 2:
             raise ValueError(
@@ -888,10 +876,8 @@ def train_single_pollutant_cnn_lstm_model(
             )
         input_shape = X_train.shape[1:]
     
-    # Single output for single-pollutant model
     num_outputs = 1
     
-    # Model building and checkpoint handling
     model: tf.keras.Model
     if resume:
         ckpt_search_dir = Path("results") / "checkpoints" / f"cnn_lstm_{pollutant_name.lower().replace('.', '').replace(' ', '_')}"
@@ -899,7 +885,6 @@ def train_single_pollutant_cnn_lstm_model(
         if ckpt_search_dir.exists():
             epoch_ckpts = list(ckpt_search_dir.rglob("epoch*_valLoss*.keras"))
             if epoch_ckpts:
-                # Find checkpoint with lowest validation loss
                 def extract_val_loss(ckpt_path: Path) -> float:
                     match = re.search(r"valLoss([\d.]+)", ckpt_path.name)
                     return float(match.group(1)) if match else float('inf')
@@ -919,7 +904,6 @@ def train_single_pollutant_cnn_lstm_model(
         model = get_cnn_lstm_model_no_pooling(input_shape, num_outputs)
         print(f"DEBUG: Created model with name: {model.name}")
     
-    # Model compilation
     compile_kwargs = {
         "optimizer": "adam",
         "loss": "mse",
@@ -928,7 +912,6 @@ def train_single_pollutant_cnn_lstm_model(
     compile_kwargs.update(kwargs)
     model.compile(**compile_kwargs)
     
-    # Setup callbacks
     run_id = mlflow.active_run().info.run_id if mlflow.active_run() else "default"
     ckpt_dir = Path("results") / "checkpoints" / f"cnn_lstm_{pollutant_name.lower().replace('.', '').replace(' ', '_')}" / run_id
     ckpt_dir.mkdir(parents=True, exist_ok=True)
@@ -959,7 +942,6 @@ def train_single_pollutant_cnn_lstm_model(
         CSVLogger(str(ckpt_dir / f"training_log_{pollutant_name.lower().replace('.', '').replace(' ', '_')}.csv")),
     ]
     
-    # Memory monitoring if available
     if PSUTIL_AVAILABLE:
         class MemoryMonitorCallback(tf.keras.callbacks.Callback):
             def __init__(self):
@@ -971,28 +953,24 @@ def train_single_pollutant_cnn_lstm_model(
                 memory_gb = memory_info.rss / 1024**3
                 print(f"Epoch {epoch + 1} - Memory usage: {memory_gb:.2f} GB")
                 
-                # Log to MLflow if available
                 if mlflow.active_run():
                     mlflow.log_metric(f"memory_gb_{pollutant_name.lower().replace('.', '').replace(' ', '_')}", memory_gb, step=epoch)
         
         callbacks.append(MemoryMonitorCallback())
     
-    # Data filtering for finite values
     def _finite_mask_1d(features: np.ndarray, targets: np.ndarray) -> np.ndarray:
         """Create mask for finite samples with 1D targets."""
-        if features.ndim == 3:  # Sequence data
+        if features.ndim == 3:  
             feat_mask = np.all(np.isfinite(features), axis=(1, 2))
-        else:  # 2D data
+        else:
             feat_mask = np.all(np.isfinite(features), axis=1)
         targ_mask = np.isfinite(targets)
         return feat_mask & targ_mask
     
-    # Filter training data
     train_mask = _finite_mask_1d(X_train, y_train)
     X_train_clean = X_train[train_mask]
     y_train_clean = y_train[train_mask]
     
-    # Filter validation data
     val_mask = _finite_mask_1d(X_val, y_val)
     X_val_clean = X_val[val_mask]
     y_val_clean = y_val[val_mask]
@@ -1005,11 +983,9 @@ def train_single_pollutant_cnn_lstm_model(
     if len(X_val_clean) == 0:
         raise ValueError(f"No finite validation samples available for {pollutant_name}")
     
-    # Training
     print(f"Starting training for {pollutant_name}...")
     
     if use_generator:
-        # Use data generator (for memory efficiency with large datasets)
         train_gen = SequenceDataGenerator(
             X_train_clean, y_train_clean, batch_size=batch_size, shuffle=True
         )
@@ -1025,7 +1001,6 @@ def train_single_pollutant_cnn_lstm_model(
             verbose=1,
         )
     else:
-        # Direct training with pre-built sequences
         history = model.fit(
             X_train_clean,
             y_train_clean,
@@ -1038,7 +1013,6 @@ def train_single_pollutant_cnn_lstm_model(
     
     print(f"Training completed for {pollutant_name}")
     
-    # Memory cleanup
     gc.collect()
     
     return model, history
