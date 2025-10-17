@@ -3,6 +3,8 @@ from typing import Dict, Tuple, Optional
 from pathlib import Path
 import re
 import gc
+
+# Optional memory monitoring
 try:
     import psutil
     PSUTIL_AVAILABLE = True
@@ -24,8 +26,9 @@ from tensorflow.keras.callbacks import (
     CSVLogger,
 )
 
+# Configure GPU memory growth to prevent allocation issues
 try:
-    gpus = tf.config.experimental.list_physical_devices('GPU')
+    gpus = tf.config.experimental.list_physical_devices("GPU")
     if gpus:
         for gpu in gpus:
             tf.config.experimental.set_memory_growth(gpu, True)
@@ -37,8 +40,23 @@ import mlflow
 import mlflow.sklearn
 import mlflow.keras
 
-from .models import get_mlr_model, get_cnn_lstm_model, get_mlp_model, get_single_pollutant_mlp_model, get_cnn_lstm_model_no_pooling
+from .models import (
+    get_mlr_model,
+    get_cnn_lstm_model,
+    get_mlp_model,
+    get_single_pollutant_mlp_model,
+    get_cnn_lstm_model_no_pooling,
+    get_temporal_aware_mlp_model,
+)
 from .data_generators import SequenceDataGenerator
+
+# Optional A100-specific optimizations
+try:
+    from .train_a100 import train_single_pollutant_cnn_lstm_model_with_dataset
+    A100_OPTIMIZATIONS_AVAILABLE = True
+except ImportError:
+    A100_OPTIMIZATIONS_AVAILABLE = False
+    print("A100 optimizations not available - using standard training methods")
 
 
 def train_mlr_models(
@@ -160,21 +178,14 @@ def train_mlp_model(
     lr_plateau_patience: int = 2,
     **kwargs,
 ) -> Tuple:
-    """Train a simple Multi-Layer Perceptron (fully-connected) model.
-
-    The input is expected to be a 2-D matrix *(samples, features)*.
-
-    Returns
-    -------
-    model, history
-        Trained Keras model and its *History*.
-    """
+    """Train MLP model on tabular data for multi-output prediction."""
 
     if X_train.ndim != 2:
         raise ValueError("X_train must be 2-D (samples, features) for MLP training.")
 
     num_outputs = y_train.shape[1] if y_train.ndim == 2 else 1
 
+    # Filter out NaN/Inf values from training data
     def _finite_mask_2d(features: np.ndarray, targets: np.ndarray) -> np.ndarray:
         feat_mask = np.all(np.isfinite(features), axis=1)
         targ_mask = np.all(np.isfinite(targets), axis=1)
@@ -182,11 +193,14 @@ def train_mlp_model(
 
     train_mask = _finite_mask_2d(X_train, y_train)
     if train_mask.sum() == 0:
-        raise ValueError("No finite samples available for MLP training after filtering.")
+        raise ValueError(
+            "No finite samples available for MLP training after filtering."
+        )
 
     X_train_clean = X_train[train_mask]
     y_train_clean = y_train[train_mask]
 
+    # Apply same filtering to validation data if provided
     if X_val is not None and y_val is not None:
         val_mask = _finite_mask_2d(X_val, y_val)
         X_val_clean = X_val[val_mask]
@@ -234,7 +248,11 @@ def train_mlp_model(
     history = model.fit(
         X_train_clean,
         y_train_clean,
-        validation_data=(X_val_clean, y_val_clean) if X_val_clean is not None and y_val_clean is not None else None,
+        validation_data=(
+            (X_val_clean, y_val_clean)
+            if X_val_clean is not None and y_val_clean is not None
+            else None
+        ),
         epochs=epochs,
         batch_size=batch_size,
         callbacks=callbacks,
@@ -254,13 +272,17 @@ def train_mlp_model(
 
             for k, v in compile_kwargs.items():
                 try:
-                    mlflow.log_param(k, v if isinstance(v, (int, float, str, bool)) else str(v))
+                    mlflow.log_param(
+                        k, v if isinstance(v, (int, float, str, bool)) else str(v)
+                    )
                 except Exception:
                     mlflow.log_param(k, str(v))
 
             for epoch_idx, _ in enumerate(history.history.get("loss", [])):
                 for metric_name, metric_values in history.history.items():
-                    mlflow.log_metric(metric_name, metric_values[epoch_idx], step=epoch_idx + 1)
+                    mlflow.log_metric(
+                        metric_name, metric_values[epoch_idx], step=epoch_idx + 1
+                    )
 
             mlflow.keras.log_model(model, name="mlp_model")
 
@@ -287,10 +309,10 @@ def train_single_pollutant_mlp_model(
 ) -> Tuple[tf.keras.Model, tf.keras.callbacks.History]:
     """
     Train a single-pollutant MLP model for air quality prediction.
-    
+
     This function handles 1D target arrays and single-output model training,
     with integrated MLflow logging for individual pollutant models.
-    
+
     Args:
         X_train: Training features array of shape (n_samples, n_features)
         y_train: Training targets array of shape (n_samples,) - 1D for single pollutant
@@ -307,28 +329,32 @@ def train_single_pollutant_mlp_model(
         lr_plateau_factor: Factor to reduce learning rate by
         lr_plateau_patience: Patience for learning rate reduction
         **kwargs: Additional arguments for model compilation
-        
+
     Returns:
         Tuple of (trained_model, history)
-        
+
     Raises:
         ValueError: If no finite samples are available for training
         RuntimeError: If model training fails
     """
-    
+
     if X_train.ndim != 2:
         raise ValueError("X_train must be 2-D (samples, features) for MLP training.")
-    
+
     if y_train.ndim == 2:
         if y_train.shape[1] != 1:
-            raise ValueError(f"Expected single pollutant target (1D or shape (n, 1)), got shape {y_train.shape}")
+            raise ValueError(
+                f"Expected single pollutant target (1D or shape (n, 1)), got shape {y_train.shape}"
+            )
         y_train = y_train.flatten()
     elif y_train.ndim != 1:
-        raise ValueError(f"y_train must be 1D for single pollutant training, got shape {y_train.shape}")
-    
+        raise ValueError(
+            f"y_train must be 1D for single pollutant training, got shape {y_train.shape}"
+        )
+
     print(f"\nTraining single-pollutant MLP model for {pollutant_name}...")
     print(f"Input shape: {X_train.shape}, Target shape: {y_train.shape}")
-    
+
     def _finite_mask_1d(features: np.ndarray, targets: np.ndarray) -> np.ndarray:
         """Create mask for finite samples with 1D targets."""
         feat_mask = np.all(np.isfinite(features), axis=1)
@@ -337,10 +363,14 @@ def train_single_pollutant_mlp_model(
 
     train_mask = _finite_mask_1d(X_train, y_train)
     if train_mask.sum() == 0:
-        raise ValueError(f"No finite samples available for {pollutant_name} MLP training after filtering.")
-    
+        raise ValueError(
+            f"No finite samples available for {pollutant_name} MLP training after filtering."
+        )
+
     if train_mask.sum() < X_train.shape[0]:
-        print(f"Filtering NaNs/Infs: keeping {train_mask.sum()} / {X_train.shape[0]} training samples")
+        print(
+            f"Filtering NaNs/Infs: keeping {train_mask.sum()} / {X_train.shape[0]} training samples"
+        )
 
     X_train_clean = X_train[train_mask]
     y_train_clean = y_train[train_mask]
@@ -349,11 +379,15 @@ def train_single_pollutant_mlp_model(
     if X_val is not None and y_val is not None:
         if y_val.ndim == 2:
             if y_val.shape[1] != 1:
-                raise ValueError(f"Expected single pollutant validation target (1D or shape (n, 1)), got shape {y_val.shape}")
+                raise ValueError(
+                    f"Expected single pollutant validation target (1D or shape (n, 1)), got shape {y_val.shape}"
+                )
             y_val = y_val.flatten()
         elif y_val.ndim != 1:
-            raise ValueError(f"y_val must be 1D for single pollutant training, got shape {y_val.shape}")
-            
+            raise ValueError(
+                f"y_val must be 1D for single pollutant training, got shape {y_val.shape}"
+            )
+
         val_mask = _finite_mask_1d(X_val, y_val)
         if val_mask.sum() > 0:
             X_val_clean = X_val[val_mask]
@@ -405,7 +439,11 @@ def train_single_pollutant_mlp_model(
         history = model.fit(
             X_train_clean,
             y_train_clean,
-            validation_data=(X_val_clean, y_val_clean) if X_val_clean is not None and y_val_clean is not None else None,
+            validation_data=(
+                (X_val_clean, y_val_clean)
+                if X_val_clean is not None and y_val_clean is not None
+                else None
+            ),
             epochs=epochs,
             batch_size=batch_size,
             callbacks=callbacks,
@@ -413,7 +451,7 @@ def train_single_pollutant_mlp_model(
         )
 
         print(f"Training completed for {pollutant_name}")
-        
+
         if mlflow is not None and mlflow.active_run() is not None:
             with mlflow.start_run(run_name=f"MLP_{pollutant_name}", nested=True):
                 mlflow.log_param("pollutant", pollutant_name)
@@ -433,39 +471,55 @@ def train_single_pollutant_mlp_model(
 
                 for k, v in compile_kwargs.items():
                     try:
-                        mlflow.log_param(k, v if isinstance(v, (int, float, str, bool)) else str(v))
+                        mlflow.log_param(
+                            k, v if isinstance(v, (int, float, str, bool)) else str(v)
+                        )
                     except Exception:
                         mlflow.log_param(k, str(v))
 
                 for epoch_idx, _ in enumerate(history.history.get("loss", [])):
                     for metric_name, metric_values in history.history.items():
-                        mlflow.log_metric(metric_name, metric_values[epoch_idx], step=epoch_idx + 1)
+                        mlflow.log_metric(
+                            metric_name, metric_values[epoch_idx], step=epoch_idx + 1
+                        )
 
-                final_loss = history.history.get("loss", [])[-1] if history.history.get("loss") else None
+                final_loss = (
+                    history.history.get("loss", [])[-1]
+                    if history.history.get("loss")
+                    else None
+                )
                 if final_loss is not None:
                     mlflow.log_metric("final_train_loss", final_loss)
-                
+
                 if X_val_clean is not None:
-                    final_val_loss = history.history.get("val_loss", [])[-1] if history.history.get("val_loss") else None
+                    final_val_loss = (
+                        history.history.get("val_loss", [])[-1]
+                        if history.history.get("val_loss")
+                        else None
+                    )
                     if final_val_loss is not None:
                         mlflow.log_metric("final_val_loss", final_val_loss)
 
-                sanitized_name = pollutant_name.lower().replace(".", "").replace(" ", "_")
-                mlflow.keras.log_model(model, name=f"single_pollutant_mlp_{sanitized_name}")
+                sanitized_name = (
+                    pollutant_name.lower().replace(".", "").replace(" ", "_")
+                )
+                mlflow.keras.log_model(
+                    model, name=f"single_pollutant_mlp_{sanitized_name}"
+                )
 
         return model, history
-        
+
     except Exception as e:
         error_msg = f"Training failed for {pollutant_name}: {str(e)}"
         print(f"ERROR: {error_msg}")
-        
+
         if mlflow is not None and mlflow.active_run() is not None:
             with mlflow.start_run(run_name=f"MLP_{pollutant_name}_FAILED", nested=True):
                 mlflow.log_param("pollutant", pollutant_name)
                 mlflow.log_param("model_type", "Single_Pollutant_MLP")
                 mlflow.log_param("training_status", "FAILED")
                 mlflow.log_param("error_message", str(e))
-        
+
         raise RuntimeError(error_msg) from e
 
 
@@ -551,20 +605,14 @@ def train_cnn_lstm_model(
                     f"Warning: failed to load checkpoint '{best_ckpt}' ({exc}). Rebuilding model instead."
                 )
                 builder_fn = model_builder or get_cnn_lstm_model
-                model = builder_fn(
-                    input_shape=input_shape, num_outputs=num_outputs
-                )
+                model = builder_fn(input_shape=input_shape, num_outputs=num_outputs)
         else:
             builder_fn = model_builder or get_cnn_lstm_model
-            model = builder_fn(
-                input_shape=input_shape, num_outputs=num_outputs
-            )
+            model = builder_fn(input_shape=input_shape, num_outputs=num_outputs)
     else:
         print("Resume disabled - starting training from scratch (fresh model).")
         builder_fn = model_builder or get_cnn_lstm_model
-        model = builder_fn(
-            input_shape=input_shape, num_outputs=num_outputs
-        )
+        model = builder_fn(input_shape=input_shape, num_outputs=num_outputs)
 
     compile_kwargs = {
         "optimizer": tf.keras.optimizers.Adam(learning_rate=5e-5),
@@ -621,21 +669,22 @@ def train_cnn_lstm_model(
     )
 
     csv_logger_cb = CSVLogger(str(tb_log_dir / "training.csv"))
-    
+
     if PSUTIL_AVAILABLE:
+
         class MemoryMonitorCallback(tf.keras.callbacks.Callback):
             def __init__(self):
                 super().__init__()
                 self.process = psutil.Process()
-                
+
             def on_epoch_end(self, epoch, logs=None):
                 memory_info = self.process.memory_info()
                 memory_gb = memory_info.rss / 1024**3
                 print(f"Epoch {epoch + 1}: Memory usage: {memory_gb:.2f} GB")
-                if memory_gb > 12: 
+                if memory_gb > 12:
                     print(f"WARNING: High memory usage detected: {memory_gb:.2f} GB")
-                    gc.collect()  
-        
+                    gc.collect()
+
         memory_monitor_cb = MemoryMonitorCallback()
     else:
         memory_monitor_cb = None
@@ -650,11 +699,12 @@ def train_cnn_lstm_model(
         tensorboard_cb,
         csv_logger_cb,
     ]
-    
+
     if memory_monitor_cb is not None:
         callbacks.append(memory_monitor_cb)
 
     if use_generator:
+
         def _finite_mask_2d(features: np.ndarray, targets: np.ndarray) -> np.ndarray:
             feat_mask = np.all(np.isfinite(features), axis=1)
             targ_mask = np.all(np.isfinite(targets), axis=1)
@@ -682,26 +732,28 @@ def train_cnn_lstm_model(
         X_val_clean, y_val_clean = X_val[val_mask], y_val[val_mask]
 
         train_generator = SequenceDataGenerator(
-            X_train_clean, y_train_clean,
+            X_train_clean,
+            y_train_clean,
             lookback=lookback,
             batch_size=batch_size,
-            shuffle=True
+            shuffle=True,
         )
         val_generator = SequenceDataGenerator(
-            X_val_clean, y_val_clean,
+            X_val_clean,
+            y_val_clean,
             lookback=lookback,
             batch_size=batch_size,
-            shuffle=False
+            shuffle=False,
         )
 
         print(f"Training with generator: {len(train_generator)} batches per epoch")
         print(f"Validation with generator: {len(val_generator)} batches per epoch")
-        
+
         if PSUTIL_AVAILABLE:
             process = psutil.Process()
             memory_info = process.memory_info()
             print(f"Memory usage before training: {memory_info.rss / 1024**3:.2f} GB")
-        
+
         gc.collect()
 
         history = model.fit(
@@ -712,6 +764,7 @@ def train_cnn_lstm_model(
             verbose=1,
         )
     else:
+
         def _finite_mask(features: np.ndarray, targets: np.ndarray) -> np.ndarray:
             feat_mask = np.all(np.isfinite(features), axis=(1, 2))
             targ_mask = np.all(np.isfinite(targets), axis=1)
@@ -824,14 +877,16 @@ def train_single_pollutant_cnn_lstm_model(
     batch_size: int = 64,
     resume: bool = True,
     use_generator: bool = False,
+    model_builder=None,
+    sample_weight=None,
     **kwargs,
 ) -> Tuple:
     """
     Train a CNN+LSTM model for single-pollutant prediction.
-    
+
     This function is specifically designed for per-pollutant training,
     similar to train_single_pollutant_mlp_model but for CNN+LSTM architecture.
-    
+
     Args:
         X_train: Training sequences with shape (samples, timesteps, features)
         y_train: Training targets for single pollutant (1D array)
@@ -843,20 +898,22 @@ def train_single_pollutant_cnn_lstm_model(
         resume: Whether to resume from checkpoint
         use_generator: Whether to use data generator (False for pre-built sequences)
         **kwargs: Additional arguments for model compilation
-    
+
     Returns:
         Tuple of (trained_model, history)
     """
     print(f"Training single-pollutant CNN+LSTM model for {pollutant_name}")
     print(f"Input shape: {X_train.shape}, Target shape: {y_train.shape}")
-    
+
     if y_train.ndim > 1:
         if y_train.shape[1] == 1:
             y_train = y_train.ravel()
             y_val = y_val.ravel()
         else:
-            raise ValueError(f"Expected single-pollutant targets, got shape {y_train.shape}")
-    
+            raise ValueError(
+                f"Expected single-pollutant targets, got shape {y_train.shape}"
+            )
+
     if use_generator:
         if len(X_train.shape) != 2:
             raise ValueError(
@@ -875,47 +932,75 @@ def train_single_pollutant_cnn_lstm_model(
                 "sequences so inputs have shape (samples, timesteps, features)."
             )
         input_shape = X_train.shape[1:]
-    
+
     num_outputs = 1
-    
+
     model: tf.keras.Model
     if resume:
-        ckpt_search_dir = Path("results") / "checkpoints" / f"cnn_lstm_{pollutant_name.lower().replace('.', '').replace(' ', '_')}"
+        ckpt_search_dir = (
+            Path("results")
+            / "checkpoints"
+            / f"cnn_lstm_{pollutant_name.lower().replace('.', '').replace(' ', '_')}"
+        )
         best_ckpt: Optional[Path] = None
         if ckpt_search_dir.exists():
             epoch_ckpts = list(ckpt_search_dir.rglob("epoch*_valLoss*.keras"))
             if epoch_ckpts:
+
                 def extract_val_loss(ckpt_path: Path) -> float:
-                    match = re.search(r"valLoss([\d.]+)", ckpt_path.name)
-                    return float(match.group(1)) if match else float('inf')
-                
+                    match = re.search(r"valLoss(\d+\.\d+)", ckpt_path.name)
+                    return float(match.group(1)) if match else float("inf")
+
                 best_ckpt = min(epoch_ckpts, key=extract_val_loss)
                 print(f"Found checkpoint for {pollutant_name}: {best_ckpt}")
-        
+
         if best_ckpt and best_ckpt.exists():
             print(f"Resuming {pollutant_name} training from checkpoint: {best_ckpt}")
             model = tf.keras.models.load_model(best_ckpt)
         else:
             print(f"No valid checkpoint found for {pollutant_name}, creating new model")
-            model = get_cnn_lstm_model_no_pooling(input_shape, num_outputs)
+            if model_builder is not None:
+                model = model_builder(input_shape, num_outputs)
+            else:
+                # Use regularized model to prevent overfitting
+                from .models import get_cnn_lstm_model_no_pooling_regularized
+                model = get_cnn_lstm_model_no_pooling_regularized(input_shape, num_outputs)
     else:
         print(f"Creating new CNN+LSTM model for {pollutant_name}")
-        print(f"DEBUG: Using get_cnn_lstm_model_no_pooling with input_shape={input_shape}, num_outputs={num_outputs}")
-        model = get_cnn_lstm_model_no_pooling(input_shape, num_outputs)
-        print(f"DEBUG: Created model with name: {model.name}")
+        if model_builder is not None:
+            model = model_builder(input_shape, num_outputs)
+        else:
+            # Use regularized model to prevent overfitting
+            from .models import get_cnn_lstm_model_no_pooling_regularized
+            model = get_cnn_lstm_model_no_pooling_regularized(input_shape, num_outputs)
+
+    # Configure optimizer for temporal stability with strong regularization
+    optimizer = tf.keras.optimizers.Adam(
+        learning_rate=0.0002,  # Low learning rate for stability
+        beta_1=0.9,
+        beta_2=0.999,
+        epsilon=1e-7,
+        clipnorm=0.5  # Gradient clipping to prevent exploding gradients
+    )
     
     compile_kwargs = {
-        "optimizer": "adam",
+        "optimizer": optimizer,
         "loss": "mse",
         "metrics": ["mse", "mae"],
     }
     compile_kwargs.update(kwargs)
     model.compile(**compile_kwargs)
-    
+
     run_id = mlflow.active_run().info.run_id if mlflow.active_run() else "default"
-    ckpt_dir = Path("results") / "checkpoints" / f"cnn_lstm_{pollutant_name.lower().replace('.', '').replace(' ', '_')}" / run_id
+    ckpt_dir = (
+        Path("results")
+        / "checkpoints"
+        / f"cnn_lstm_{pollutant_name.lower().replace('.', '').replace(' ', '_')}"
+        / run_id
+    )
     ckpt_dir.mkdir(parents=True, exist_ok=True)
-    
+
+    # Enhanced callbacks for aggressive overfitting prevention
     callbacks = [
         ModelCheckpoint(
             filepath=str(ckpt_dir / "epoch{epoch:03d}_valLoss{val_loss:.4f}.keras"),
@@ -927,64 +1012,86 @@ def train_single_pollutant_cnn_lstm_model(
         ),
         EarlyStopping(
             monitor="val_loss",
-            patience=10,
+            patience=5,  # Much more aggressive early stopping
             restore_best_weights=True,
             verbose=1,
+            min_delta=0.0005,  # Require more significant improvement
         ),
         ReduceLROnPlateau(
             monitor="val_loss",
-            factor=0.5,
-            patience=5,
+            factor=0.3,  # More aggressive LR reduction
+            patience=3,  # Shorter patience before reducing LR
             min_lr=1e-7,
             verbose=1,
+            min_delta=0.0001
         ),
         TerminateOnNaN(),
-        CSVLogger(str(ckpt_dir / f"training_log_{pollutant_name.lower().replace('.', '').replace(' ', '_')}.csv")),
+        CSVLogger(
+            str(
+                ckpt_dir
+                / f"training_log_{pollutant_name.lower().replace('.', '').replace(' ', '_')}.csv"
+            )
+        ),
     ]
-    
+
     if PSUTIL_AVAILABLE:
+
         class MemoryMonitorCallback(tf.keras.callbacks.Callback):
             def __init__(self):
                 super().__init__()
                 self.process = psutil.Process()
-                
+
             def on_epoch_end(self, epoch, logs=None):
                 memory_info = self.process.memory_info()
                 memory_gb = memory_info.rss / 1024**3
                 print(f"Epoch {epoch + 1} - Memory usage: {memory_gb:.2f} GB")
-                
+
                 if mlflow.active_run():
-                    mlflow.log_metric(f"memory_gb_{pollutant_name.lower().replace('.', '').replace(' ', '_')}", memory_gb, step=epoch)
-        
+                    mlflow.log_metric(
+                        f"memory_gb_{pollutant_name.lower().replace('.', '').replace(' ', '_')}",
+                        memory_gb,
+                        step=epoch,
+                    )
+
         callbacks.append(MemoryMonitorCallback())
-    
+
     def _finite_mask_1d(features: np.ndarray, targets: np.ndarray) -> np.ndarray:
         """Create mask for finite samples with 1D targets."""
-        if features.ndim == 3:  
+        if features.ndim == 3:
             feat_mask = np.all(np.isfinite(features), axis=(1, 2))
         else:
             feat_mask = np.all(np.isfinite(features), axis=1)
         targ_mask = np.isfinite(targets)
         return feat_mask & targ_mask
-    
+
     train_mask = _finite_mask_1d(X_train, y_train)
     X_train_clean = X_train[train_mask]
     y_train_clean = y_train[train_mask]
     
+    # Apply mask to sample weights if provided
+    sample_weight_clean = None
+    if sample_weight is not None:
+        sample_weight_clean = sample_weight[train_mask]
+        print(f"Applied finite mask to sample weights: {len(sample_weight)} -> {len(sample_weight_clean)}")
+
     val_mask = _finite_mask_1d(X_val, y_val)
     X_val_clean = X_val[val_mask]
     y_val_clean = y_val[val_mask]
-    
-    print(f"Training samples for {pollutant_name}: {len(X_train_clean)} (filtered from {len(X_train)})")
-    print(f"Validation samples for {pollutant_name}: {len(X_val_clean)} (filtered from {len(X_val)})")
-    
+
+    print(
+        f"Training samples for {pollutant_name}: {len(X_train_clean)} (filtered from {len(X_train)})"
+    )
+    print(
+        f"Validation samples for {pollutant_name}: {len(X_val_clean)} (filtered from {len(X_val)})"
+    )
+
     if len(X_train_clean) == 0:
         raise ValueError(f"No finite training samples available for {pollutant_name}")
     if len(X_val_clean) == 0:
         raise ValueError(f"No finite validation samples available for {pollutant_name}")
-    
+
     print(f"Starting training for {pollutant_name}...")
-    
+
     if use_generator:
         train_gen = SequenceDataGenerator(
             X_train_clean, y_train_clean, batch_size=batch_size, shuffle=True
@@ -992,7 +1099,7 @@ def train_single_pollutant_cnn_lstm_model(
         val_gen = SequenceDataGenerator(
             X_val_clean, y_val_clean, batch_size=batch_size, shuffle=False
         )
-        
+
         history = model.fit(
             train_gen,
             validation_data=val_gen,
@@ -1005,14 +1112,15 @@ def train_single_pollutant_cnn_lstm_model(
             X_train_clean,
             y_train_clean,
             validation_data=(X_val_clean, y_val_clean),
+            sample_weight=sample_weight_clean,  # Add temporal weighting
             epochs=epochs,
             batch_size=batch_size,
             callbacks=callbacks,
             verbose=1,
         )
-    
+
     print(f"Training completed for {pollutant_name}")
-    
+
     gc.collect()
-    
+
     return model, history

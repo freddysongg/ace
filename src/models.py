@@ -1,9 +1,10 @@
 """
 Models module for air pollutant prediction.
 
-This module contains model definitions for:
-- Multiple Linear Regression (MLR)
-- CNN+LSTM (to be implemented)
+Contains neural network architectures for temporal air quality forecasting:
+- CNN+LSTM models for sequence prediction
+- MLP models for tabular data
+- Single-pollutant specialized variants
 """
 
 from sklearn.linear_model import LinearRegression
@@ -12,48 +13,48 @@ from typing import Optional
 
 
 def get_mlr_model():
-    """
-    Create and return a Multiple Linear Regression model.
-
-    Returns:
-        sklearn.linear_model.LinearRegression: An untrained LinearRegression model
-    """
+    """Create Multiple Linear Regression model for baseline comparison."""
     return LinearRegression()
 
 
 def get_cnn_lstm_model(input_shape, num_outputs=3):
     """
-    Create and return a CNN+LSTM model for multi-output regression.
-
-    Args:
-        input_shape (tuple): Shape of the input data
-        num_outputs (int): Number of output targets (default: 3 for Ozone, PM2.5, NO2)
-
-    Returns:
-        tensorflow.keras.Model: An untrained CNN+LSTM model
+    CNN+LSTM model for multi-output air quality prediction.
+    
+    Architecture combines convolutional feature extraction with LSTM temporal modeling.
+    Includes regularization to prevent overfitting on temporal patterns.
     """
     inputs = layers.Input(shape=input_shape, name="input_layer")
 
-    # Convolutional layers for feature extraction
-    x = layers.Conv1D(filters=32, kernel_size=3, activation="relu", padding="same")(
-        inputs
-    )
+    # Feature extraction with 1D convolution
+    x = layers.Conv1D(filters=32, kernel_size=3, activation="relu", padding="same",
+                     kernel_regularizer=regularizers.l2(0.001))(inputs)
+    x = layers.BatchNormalization()(x)
+    x = layers.Dropout(0.2)(x)
     x = layers.MaxPooling1D(pool_size=2)(x)
-    x = layers.Conv1D(filters=64, kernel_size=3, activation="relu", padding="same")(x)
+    
+    x = layers.Conv1D(filters=64, kernel_size=3, activation="relu", padding="same",
+                     kernel_regularizer=regularizers.l2(0.001))(x)
+    x = layers.BatchNormalization()(x)
+    x = layers.Dropout(0.3)(x)
     x = layers.MaxPooling1D(pool_size=2)(x)
 
-    # LSTM layer to capture temporal dependencies
-    x = layers.LSTM(64, return_sequences=False)(x)
-    # Dropout for regularization
-    x = layers.Dropout(0.5)(x)
+    # Temporal sequence processing
+    x = layers.LSTM(64, return_sequences=False, dropout=0.2, recurrent_dropout=0.2,
+                   kernel_regularizer=regularizers.l2(0.001))(x)
+    x = layers.BatchNormalization()(x)
+    x = layers.Dropout(0.4)(x)
 
-    # Fully connected layers
-    x = layers.Dense(32, activation="relu")(x)
-    # Additional Dropout layer
-    x = layers.Dropout(0.5)(x)
-    outputs = layers.Dense(num_outputs, activation="linear", name="output_layer")(x)
+    # Dense prediction layers
+    x = layers.Dense(32, activation="relu", kernel_regularizer=regularizers.l2(0.001))(x)
+    x = layers.BatchNormalization()(x)
+    x = layers.Dropout(0.3)(x)
+    
+    outputs = layers.Dense(num_outputs, activation="linear", 
+                          kernel_regularizer=regularizers.l2(0.0005), 
+                          name="output_layer")(x)
 
-    model = models.Model(inputs=inputs, outputs=outputs, name="cnn_lstm_air_pollutant")
+    model = models.Model(inputs=inputs, outputs=outputs, name="cnn_lstm_air_pollutant_regularized")
     return model
 
 
@@ -64,8 +65,11 @@ def get_mlp_model(
     dropout: float = 0.3,
     l2_reg: Optional[float] = None,
 ):
+    """Multi-layer perceptron for tabular air quality prediction."""
     inputs = layers.Input(shape=(input_dim,), name="input_layer")
     x = inputs
+    
+    # Build hidden layers with optional regularization
     for i, units in enumerate(hidden_units):
         kernel_reg = regularizers.l2(l2_reg) if l2_reg and l2_reg > 0 else None
         x = layers.Dense(
@@ -77,6 +81,7 @@ def get_mlp_model(
         if dropout > 0:
             x = layers.Dropout(dropout, name=f"dropout_{i+1}")(x)
 
+    # Output layer
     kernel_reg = regularizers.l2(l2_reg) if l2_reg and l2_reg > 0 else None
     outputs = layers.Dense(
         num_outputs,
@@ -95,23 +100,11 @@ def get_single_pollutant_mlp_model(
     dropout: float = 0.3,
     l2_reg: Optional[float] = None,
 ):
-    """
-    Create and return an MLP model for single pollutant prediction.
-    
-    This function creates a model identical to get_mlp_model() but with num_outputs=1
-    for training separate models per pollutant.
-    
-    Args:
-        input_dim (int): Number of input features
-        hidden_units (tuple): Tuple of hidden layer sizes (default: (64, 32))
-        dropout (float): Dropout rate for regularization (default: 0.3)
-        l2_reg (Optional[float]): L2 regularization strength (default: None)
-    
-    Returns:
-        tensorflow.keras.Model: An untrained MLP model with single output
-    """
+    """Single-output MLP model for individual pollutant prediction."""
     inputs = layers.Input(shape=(input_dim,), name="input_layer")
     x = inputs
+    
+    # Build hidden layers
     for i, units in enumerate(hidden_units):
         kernel_reg = regularizers.l2(l2_reg) if l2_reg and l2_reg > 0 else None
         x = layers.Dense(
@@ -123,9 +116,10 @@ def get_single_pollutant_mlp_model(
         if dropout > 0:
             x = layers.Dropout(dropout, name=f"dropout_{i+1}")(x)
 
+    # Single output layer for one pollutant
     kernel_reg = regularizers.l2(l2_reg) if l2_reg and l2_reg > 0 else None
     outputs = layers.Dense(
-        1,  # Single output for single pollutant
+        1,
         activation="linear",
         kernel_regularizer=kernel_reg,
         name="output_layer",
@@ -142,11 +136,15 @@ def get_simple_lstm_model(
     dense_units: int = 32,
     dropout: float = 0.3,
 ):
-
+    """Basic LSTM model for sequence-to-value prediction."""
     inputs = layers.Input(shape=input_shape, name="input_layer")
+    
+    # Single LSTM layer for temporal processing
     x = layers.LSTM(lstm_units, return_sequences=False, name="lstm")(inputs)
     if dropout > 0:
         x = layers.Dropout(dropout, name="dropout_1")(x)
+        
+    # Dense layers for final prediction
     x = layers.Dense(dense_units, activation="relu", name="dense_1")(x)
     if dropout > 0:
         x = layers.Dropout(dropout, name="dropout_2")(x)
@@ -155,39 +153,48 @@ def get_simple_lstm_model(
     model = models.Model(inputs=inputs, outputs=outputs, name="simple_lstm_air_pollutant")
     return model
 
-def get_cnn_lstm_model_no_pooling(input_shape, num_outputs=3):
+def get_cnn_lstm_model_no_pooling_regularized(input_shape, num_outputs=3):
     """
-    Create and return a CNN+LSTM model for single timestep data (no pooling layers).
+    Heavily regularized CNN+LSTM model to prevent overfitting.
     
-    This version is designed to work with input_shape like (1, features) where
-    the temporal dimension is 1, avoiding issues with MaxPooling1D.
-
-    Args:
-        input_shape (tuple): Shape of the input data (timesteps, features)
-        num_outputs (int): Number of output targets (default: 3 for Ozone, PM2.5, NO2)
-
-    Returns:
-        tensorflow.keras.Model: An untrained CNN+LSTM model without pooling
+    Uses simplified architecture with strong regularization for temporal robustness.
     """
     inputs = layers.Input(shape=input_shape, name="input_layer")
-
-    # Convolutional layers for feature extraction (no pooling to avoid dimension issues)
-    x = layers.Conv1D(filters=32, kernel_size=1, activation="relu", padding="same")(inputs)
-    x = layers.Conv1D(filters=64, kernel_size=1, activation="relu", padding="same")(x)
     
-    # LSTM layer to capture dependencies (even with single timestep)
-    x = layers.LSTM(64, return_sequences=False)(x)
+    # Simplified feature extraction with strong regularization
+    x = layers.Conv1D(filters=32, kernel_size=1, activation="relu", padding="same", 
+                     kernel_regularizer=regularizers.l2(0.01), name="conv1d_1")(inputs)
+    x = layers.BatchNormalization(name="bn_conv_1")(x)
+    x = layers.Dropout(0.4, name="dropout_conv_1")(x)
     
-    # Dropout for regularization
-    x = layers.Dropout(0.5)(x)
-
-    # Fully connected layers
-    x = layers.Dense(128, activation="relu")(x)
-    x = layers.Dropout(0.3)(x)
-    x = layers.Dense(64, activation="relu")(x)
-    x = layers.Dropout(0.3)(x)
+    conv_out = layers.Conv1D(filters=64, kernel_size=1, activation="relu", padding="same", 
+                            kernel_regularizer=regularizers.l2(0.01), name="conv1d_2")(x)
+    conv_out = layers.BatchNormalization(name="bn_conv_2")(conv_out)
+    conv_out = layers.Dropout(0.3, name="dropout_conv_2")(conv_out)
     
-    outputs = layers.Dense(num_outputs, activation="linear", name="output_layer")(x)
-
-    model = models.Model(inputs=inputs, outputs=outputs, name="cnn_lstm_no_pooling")
+    # Simplified LSTM with heavy regularization
+    lstm_out = layers.LSTM(32, return_sequences=False, dropout=0.4, recurrent_dropout=0.3,
+                          kernel_regularizer=regularizers.l2(0.01),
+                          recurrent_regularizer=regularizers.l2(0.01),
+                          name="lstm")(conv_out)
+    
+    # Dense layers with strong regularization
+    x = layers.Dense(64, activation="relu", 
+                    kernel_regularizer=regularizers.l2(0.01), name="dense_1")(lstm_out)
+    x = layers.BatchNormalization(name="bn_dense_1")(x)
+    x = layers.Dropout(0.5, name="dropout_dense_1")(x)
+    
+    x = layers.Dense(32, activation="relu",
+                    kernel_regularizer=regularizers.l2(0.01), name="dense_2")(x)
+    x = layers.BatchNormalization(name="bn_dense_2")(x)
+    x = layers.Dropout(0.4, name="dropout_dense_2")(x)
+    
+    outputs = layers.Dense(
+        num_outputs, 
+        activation="linear", 
+        kernel_regularizer=regularizers.l2(0.01),
+        name="output_layer"
+    )(x)
+    
+    model = models.Model(inputs=inputs, outputs=outputs, name="regularized_cnn_lstm")
     return model

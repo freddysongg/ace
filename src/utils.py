@@ -9,16 +9,17 @@ __all__ = ["set_global_seed"]
 
 
 def set_global_seed(seed: int = 42) -> None:
-    """Set Python, NumPy, and TensorFlow PRNG seeds for reproducibility.
-
-    Args:
-        seed: Any non-negative integer. Using the same value across runs makes
-            them (mostly) deterministic and comparable.
+    """
+    Configure reproducible random seeds across all libraries.
+    
+    Sets seeds for Python, NumPy, TensorFlow, and system hash functions
+    to ensure consistent results across training runs.
     """
     if seed < 0:
         raise ValueError("Seed must be a non-negative integer.")
 
-    os.environ["PYTHONHASHSEED"] = str(seed)
-    random.seed(seed)
-    np.random.seed(seed)
-    tf.random.set_seed(seed)
+    # Set seeds for all random number generators
+    os.environ["PYTHONHASHSEED"] = str(seed)  # Python hash function seed
+    random.seed(seed)                         # Python random module
+    np.random.seed(seed)                     # NumPy random functions
+    tf.random.set_seed(seed)                 # TensorFlow operations

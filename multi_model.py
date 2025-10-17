@@ -32,7 +32,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--data",
         type=str,
-        default=("data/input_with_geo_and_interactions_v4.npy"),
+        default=("data/input_with_geo_and_interactions_v5.npy"),
         help=(
             "Path to the input .npy data file. Default points to the first "
             "provided dataset in the repository."

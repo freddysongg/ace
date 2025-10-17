@@ -33,7 +33,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--data",
         type=str,
-        default=("data/input_with_geo_and_interactions_v4.npy"),
+        default=("data/input_with_geo_and_interactions_v5.npy"),
         help=(
             "Path to the input .npy data file. Default points to the first "
             "provided dataset in the repository."
@@ -610,97 +610,126 @@ def main() -> None:
                 "Ozone": {
                     "target_index": 0,
                     "use_robust_scaler_targets": False,  # StandardScaler for small range
-                    "log_transform": False
+                    "log_transform": False,
                 },
                 "PM2.5": {
                     "target_index": 1,
-                    "use_robust_scaler_targets": True,   # RobustScaler for outliers
-                    "log_transform": False
+                    "use_robust_scaler_targets": True,  # RobustScaler for outliers
+                    "log_transform": False,
                 },
                 "NO2": {
                     "target_index": 2,
-                    "use_robust_scaler_targets": True,   # RobustScaler for outliers
-                    "log_transform": False
-                }
+                    "use_robust_scaler_targets": True,  # RobustScaler for outliers
+                    "log_transform": False,
+                },
             }
 
             if args.eval_only:
-                import tensorflow as tf 
-                
+                import tensorflow as tf
+
                 pollutant_models = {}
                 pollutant_histories = {}
-                
+
                 for pollutant_name in pollutant_configs.keys():
-                    default_path = Path("results") / "mlp-per-pollutant" / pollutant_name / "mlp_model.keras"
-                    model_path = Path(args.model_file) if args.model_file else default_path
+                    default_path = (
+                        Path("results")
+                        / "mlp-per-pollutant"
+                        / pollutant_name
+                        / "mlp_model.keras"
+                    )
+                    model_path = (
+                        Path(args.model_file) if args.model_file else default_path
+                    )
                     if not model_path.exists():
                         raise FileNotFoundError(
                             f"Saved model file not found for {pollutant_name}: {model_path.resolve()}. "
                             "Provide --model-file with the correct path or run training first."
                         )
-                    print(f"Loading saved {pollutant_name} MLP model from {model_path} …")
-                    pollutant_models[pollutant_name] = tf.keras.models.load_model(model_path, compile=False)
+                    print(
+                        f"Loading saved {pollutant_name} MLP model from {model_path} …"
+                    )
+                    pollutant_models[pollutant_name] = tf.keras.models.load_model(
+                        model_path, compile=False
+                    )
                     pollutant_histories[pollutant_name] = {"history": {}}
-                
+
                 model = pollutant_models["Ozone"]
                 history = pollutant_histories["Ozone"]
             else:
                 import gc
                 import tensorflow as tf
-                
+
                 pollutant_models = {}
                 pollutant_histories = {}
                 pollutant_processed_data = {}
-                
+
                 print("Starting per-pollutant training loop...")
-                
+
                 for pollutant_name, config in pollutant_configs.items():
-                    print(f"\n==================== Training {pollutant_name} Model ====================")
-                    
+                    print(
+                        f"\n==================== Training {pollutant_name} Model ===================="
+                    )
+
                     # Preprocess data for this specific pollutant
-                    print(f"Preprocessing data for {pollutant_name} with target index {config['target_index']}...")
+                    print(
+                        f"Preprocessing data for {pollutant_name} with target index {config['target_index']}..."
+                    )
                     single_pollutant_data = data_loader.preprocess_data(
                         train_data,
                         val_data,
                         test_data,
                         feature_columns=feature_indices,
                         target_columns=target_indices,
-                        target_column_index=config['target_index'],  # Single pollutant processing
+                        target_column_index=config[
+                            "target_index"
+                        ],  # Single pollutant processing
                         log_transform_targets=None,  # No log transformation
-                        use_robust_scaler_targets=config['use_robust_scaler_targets'],
+                        use_robust_scaler_targets=config["use_robust_scaler_targets"],
                     )
-                    
+
                     # Store processed data for later evaluation
                     pollutant_processed_data[pollutant_name] = single_pollutant_data
-                    
-                    print(f"Training data shape for {pollutant_name}: {single_pollutant_data['X_train'].shape}")
-                    print(f"Target data shape for {pollutant_name}: {single_pollutant_data['y_train'].shape}")
-                    print(f"Using {'RobustScaler' if config['use_robust_scaler_targets'] else 'StandardScaler'} for {pollutant_name}")
-                    
+
+                    print(
+                        f"Training data shape for {pollutant_name}: {single_pollutant_data['X_train'].shape}"
+                    )
+                    print(
+                        f"Target data shape for {pollutant_name}: {single_pollutant_data['y_train'].shape}"
+                    )
+                    print(
+                        f"Using {'RobustScaler' if config['use_robust_scaler_targets'] else 'StandardScaler'} for {pollutant_name}"
+                    )
+
                     # Train single-pollutant model
                     model, history = train.train_single_pollutant_mlp_model(
                         single_pollutant_data["X_train"],
-                        single_pollutant_data["y_train"].ravel(),  # Convert to 1D for single-pollutant training
+                        single_pollutant_data[
+                            "y_train"
+                        ].ravel(),  # Convert to 1D for single-pollutant training
                         single_pollutant_data["X_val"],
-                        single_pollutant_data["y_val"].ravel(),    # Convert to 1D for single-pollutant training
+                        single_pollutant_data[
+                            "y_val"
+                        ].ravel(),  # Convert to 1D for single-pollutant training
                         pollutant_name=pollutant_name,
                         epochs=50,
                         batch_size=64,
                     )
-                    
+
                     # Store model and history
                     pollutant_models[pollutant_name] = model
                     pollutant_histories[pollutant_name] = history
-                    
+
                     print(f"Completed training for {pollutant_name}")
-                    
+
                     # Memory cleanup between pollutant training iterations
                     gc.collect()
-                    if hasattr(tf.keras.backend, 'clear_session'):
+                    if hasattr(tf.keras.backend, "clear_session"):
                         tf.keras.backend.clear_session()
-                
-                print("\nCompleted per-pollutant training loop for all three pollutants.")
-                
+
+                print(
+                    "\nCompleted per-pollutant training loop for all three pollutants."
+                )
+
                 # For backward compatibility, set model to the first pollutant model
                 model = pollutant_models["Ozone"]
                 history = pollutant_histories["Ozone"]
@@ -723,90 +752,102 @@ def main() -> None:
             print(
                 "\n==================== MLP Evaluation (Test Set) ===================="
             )
-            
+
             if not args.eval_only:
                 y_pred_val_combined = []
                 y_pred_test_combined = []
                 y_val_raw_combined = []
                 y_test_raw_combined = []
-                
+
                 for pollutant_name in ["Ozone", "PM2.5", "NO2"]:
                     single_data = pollutant_processed_data[pollutant_name]
                     single_model = pollutant_models[pollutant_name]
-                    
+
                     y_pred_val_single = single_model.predict(single_data["X_val"])
                     y_pred_test_single = single_model.predict(single_data["X_test"])
-                    
+
                     if y_pred_val_single.ndim > 1:
                         y_pred_val_single = y_pred_val_single.ravel()
                     if y_pred_test_single.ndim > 1:
                         y_pred_test_single = y_pred_test_single.ravel()
-                    
+
                     target_scaler = single_data["target_scaler"]
-                    y_pred_val_orig = target_scaler.inverse_transform(y_pred_val_single.reshape(-1, 1)).ravel()
-                    y_pred_test_orig = target_scaler.inverse_transform(y_pred_test_single.reshape(-1, 1)).ravel()
-                    
+                    y_pred_val_orig = target_scaler.inverse_transform(
+                        y_pred_val_single.reshape(-1, 1)
+                    ).ravel()
+                    y_pred_test_orig = target_scaler.inverse_transform(
+                        y_pred_test_single.reshape(-1, 1)
+                    ).ravel()
+
                     y_val_raw_single = single_data["y_val_raw"].ravel()
                     y_test_raw_single = single_data["y_test_raw"].ravel()
-                    
+
                     y_pred_val_combined.append(y_pred_val_orig)
                     y_pred_test_combined.append(y_pred_test_orig)
                     y_val_raw_combined.append(y_val_raw_single)
                     y_test_raw_combined.append(y_test_raw_single)
-                
+
                 y_pred_val_orig = np.column_stack(y_pred_val_combined)
                 y_pred_test_orig = np.column_stack(y_pred_test_combined)
                 y_val_raw = np.column_stack(y_val_raw_combined)
                 y_test_raw = np.column_stack(y_test_raw_combined)
-                
+
                 processed_data = pollutant_processed_data["Ozone"]
-                
+
             else:
                 y_pred_val_combined = []
                 y_pred_test_combined = []
                 y_val_raw_combined = []
                 y_test_raw_combined = []
-                
+
                 for pollutant_name in ["Ozone", "PM2.5", "NO2"]:
                     config = pollutant_configs[pollutant_name]
                     single_model = pollutant_models[pollutant_name]
-                    
+
                     single_pollutant_data = data_loader.preprocess_data(
                         train_data,
                         val_data,
                         test_data,
                         feature_columns=feature_indices,
                         target_columns=target_indices,
-                        target_column_index=config['target_index'],  
-                        log_transform_targets=None,  
-                        use_robust_scaler_targets=config['use_robust_scaler_targets'],
+                        target_column_index=config["target_index"],
+                        log_transform_targets=None,
+                        use_robust_scaler_targets=config["use_robust_scaler_targets"],
                     )
-                    
-                    y_pred_val_single = single_model.predict(single_pollutant_data["X_val"])
-                    y_pred_test_single = single_model.predict(single_pollutant_data["X_test"])
-                    
+
+                    y_pred_val_single = single_model.predict(
+                        single_pollutant_data["X_val"]
+                    )
+                    y_pred_test_single = single_model.predict(
+                        single_pollutant_data["X_test"]
+                    )
+
                     if y_pred_val_single.ndim > 1:
                         y_pred_val_single = y_pred_val_single.ravel()
                     if y_pred_test_single.ndim > 1:
                         y_pred_test_single = y_pred_test_single.ravel()
-                    
+
                     target_scaler = single_pollutant_data["target_scaler"]
-                    y_pred_val_orig = target_scaler.inverse_transform(y_pred_val_single.reshape(-1, 1)).ravel()
-                    y_pred_test_orig = target_scaler.inverse_transform(y_pred_test_single.reshape(-1, 1)).ravel()
-                    
+                    y_pred_val_orig = target_scaler.inverse_transform(
+                        y_pred_val_single.reshape(-1, 1)
+                    ).ravel()
+                    y_pred_test_orig = target_scaler.inverse_transform(
+                        y_pred_test_single.reshape(-1, 1)
+                    ).ravel()
+
                     y_val_raw_single = single_pollutant_data["y_val_raw"].ravel()
                     y_test_raw_single = single_pollutant_data["y_test_raw"].ravel()
-                    
+
                     y_pred_val_combined.append(y_pred_val_orig)
                     y_pred_test_combined.append(y_pred_test_orig)
                     y_val_raw_combined.append(y_val_raw_single)
                     y_test_raw_combined.append(y_test_raw_single)
-                
+
                 y_pred_val_orig = np.column_stack(y_pred_val_combined)
                 y_pred_test_orig = np.column_stack(y_pred_test_combined)
                 y_val_raw = np.column_stack(y_val_raw_combined)
                 y_test_raw = np.column_stack(y_test_raw_combined)
-                
+
                 processed_data = single_pollutant_data
 
             pollutant_names = ["Ozone", "PM2.5", "NO2"]
@@ -824,97 +865,143 @@ def main() -> None:
                 print(f"  Test RMSE:       {test_metrics[pollutant]['RMSE']:.2f}")
                 print(f"  Test MAE:        {test_metrics[pollutant]['MAE']:.2f}")
                 print(f"  Test Bias:       {test_metrics[pollutant]['Bias']:.2f}")
-                
+
                 print("  ----------- Normalized -----------")
-                nrmse_pct = test_metrics[pollutant].get('NRMSE', float('nan')) * 100
-                cv_rmse_pct = test_metrics[pollutant].get('CV_RMSE', float('nan')) * 100
-                norm_mae_pct = test_metrics[pollutant].get('Norm_MAE', float('nan')) * 100
-                norm_bias_pct = test_metrics[pollutant].get('Norm_Bias', float('nan')) * 100
-                
+                nrmse_pct = test_metrics[pollutant].get("NRMSE", float("nan")) * 100
+                cv_rmse_pct = test_metrics[pollutant].get("CV_RMSE", float("nan")) * 100
+                norm_mae_pct = (
+                    test_metrics[pollutant].get("Norm_MAE", float("nan")) * 100
+                )
+                norm_bias_pct = (
+                    test_metrics[pollutant].get("Norm_Bias", float("nan")) * 100
+                )
+
                 print(f"  NRMSE (% of Range):   {nrmse_pct:.2f}%")
                 print(f"  CV(RMSE) (% of Mean): {cv_rmse_pct:.2f}%")
                 print(f"  Norm MAE (% of Mean): {norm_mae_pct:.2f}%")
-                print(f"  Norm Bias (% of Mean):{norm_bias_pct:+.2f}%")  
+                print(f"  Norm Bias (% of Mean):{norm_bias_pct:+.2f}%")
 
             print("\n===== MLflow Logging =====")
-            
+
             for pollutant in pollutant_names:
                 pollutant_key = pollutant.lower().replace(".", "").replace(" ", "_")
-                
-                mlflow.log_metric(f"val_rmse_{pollutant_key}", val_metrics[pollutant]['RMSE'])
-                mlflow.log_metric(f"val_r2_{pollutant_key}", val_metrics[pollutant]['R2'])
-                mlflow.log_metric(f"val_mae_{pollutant_key}", val_metrics[pollutant]['MAE'])
-                mlflow.log_metric(f"val_bias_{pollutant_key}", val_metrics[pollutant]['Bias'])
-                
-                mlflow.log_metric(f"test_rmse_{pollutant_key}", test_metrics[pollutant]['RMSE'])
-                mlflow.log_metric(f"test_r2_{pollutant_key}", test_metrics[pollutant]['R2'])
-                mlflow.log_metric(f"test_mae_{pollutant_key}", test_metrics[pollutant]['MAE'])
-                mlflow.log_metric(f"test_bias_{pollutant_key}", test_metrics[pollutant]['Bias'])
-                
+
+                mlflow.log_metric(
+                    f"val_rmse_{pollutant_key}", val_metrics[pollutant]["RMSE"]
+                )
+                mlflow.log_metric(
+                    f"val_r2_{pollutant_key}", val_metrics[pollutant]["R2"]
+                )
+                mlflow.log_metric(
+                    f"val_mae_{pollutant_key}", val_metrics[pollutant]["MAE"]
+                )
+                mlflow.log_metric(
+                    f"val_bias_{pollutant_key}", val_metrics[pollutant]["Bias"]
+                )
+
+                mlflow.log_metric(
+                    f"test_rmse_{pollutant_key}", test_metrics[pollutant]["RMSE"]
+                )
+                mlflow.log_metric(
+                    f"test_r2_{pollutant_key}", test_metrics[pollutant]["R2"]
+                )
+                mlflow.log_metric(
+                    f"test_mae_{pollutant_key}", test_metrics[pollutant]["MAE"]
+                )
+                mlflow.log_metric(
+                    f"test_bias_{pollutant_key}", test_metrics[pollutant]["Bias"]
+                )
+
                 print(f"Logged metrics for {pollutant}")
-            
-            avg_val_rmse = np.mean([val_metrics[p]['RMSE'] for p in pollutant_names])
-            avg_val_r2 = np.mean([val_metrics[p]['R2'] for p in pollutant_names])
-            avg_val_mae = np.mean([val_metrics[p]['MAE'] for p in pollutant_names])
-            avg_val_bias = np.mean([val_metrics[p]['Bias'] for p in pollutant_names])
-            
-            avg_test_rmse = np.mean([test_metrics[p]['RMSE'] for p in pollutant_names])
-            avg_test_r2 = np.mean([test_metrics[p]['R2'] for p in pollutant_names])
-            avg_test_mae = np.mean([test_metrics[p]['MAE'] for p in pollutant_names])
-            avg_test_bias = np.mean([test_metrics[p]['Bias'] for p in pollutant_names])
-            
+
+            avg_val_rmse = np.mean([val_metrics[p]["RMSE"] for p in pollutant_names])
+            avg_val_r2 = np.mean([val_metrics[p]["R2"] for p in pollutant_names])
+            avg_val_mae = np.mean([val_metrics[p]["MAE"] for p in pollutant_names])
+            avg_val_bias = np.mean([val_metrics[p]["Bias"] for p in pollutant_names])
+
+            avg_test_rmse = np.mean([test_metrics[p]["RMSE"] for p in pollutant_names])
+            avg_test_r2 = np.mean([test_metrics[p]["R2"] for p in pollutant_names])
+            avg_test_mae = np.mean([test_metrics[p]["MAE"] for p in pollutant_names])
+            avg_test_bias = np.mean([test_metrics[p]["Bias"] for p in pollutant_names])
+
             mlflow.log_metric("avg_val_rmse", avg_val_rmse)
             mlflow.log_metric("avg_val_r2", avg_val_r2)
             mlflow.log_metric("avg_val_mae", avg_val_mae)
             mlflow.log_metric("avg_val_bias", avg_val_bias)
-            
+
             mlflow.log_metric("avg_test_rmse", avg_test_rmse)
             mlflow.log_metric("avg_test_r2", avg_test_r2)
             mlflow.log_metric("avg_test_mae", avg_test_mae)
             mlflow.log_metric("avg_test_bias", avg_test_bias)
-            
+
             print("Logged aggregate metrics across all pollutants")
-            
+
             if not args.eval_only:
                 for pollutant_name, config in pollutant_configs.items():
-                    pollutant_key = pollutant_name.lower().replace(".", "").replace(" ", "_")
-                    scaler_type = "RobustScaler" if config["use_robust_scaler_targets"] else "StandardScaler"
+                    pollutant_key = (
+                        pollutant_name.lower().replace(".", "").replace(" ", "_")
+                    )
+                    scaler_type = (
+                        "RobustScaler"
+                        if config["use_robust_scaler_targets"]
+                        else "StandardScaler"
+                    )
                     mlflow.log_param(f"{pollutant_key}_scaler_type", scaler_type)
-                    mlflow.log_param(f"{pollutant_key}_log_transform", config["log_transform"])
-                    mlflow.log_param(f"{pollutant_key}_target_index", config["target_index"])
-                
+                    mlflow.log_param(
+                        f"{pollutant_key}_log_transform", config["log_transform"]
+                    )
+                    mlflow.log_param(
+                        f"{pollutant_key}_target_index", config["target_index"]
+                    )
+
                 mlflow.log_param("model_type", "per_pollutant_mlp")
                 mlflow.log_param("num_separate_models", len(pollutant_configs))
                 print("Logged per-pollutant model configuration parameters")
-            
+
             print("MLflow logging completed")
-            
+
             print("\n===== Generating Comparison Metrics Summary =====")
-            
+
             per_pollutant_metrics_summary = {
                 "validation_metrics": val_metrics,
-                "test_metrics": test_metrics
+                "test_metrics": test_metrics,
             }
-            
-            comparison_summary_path = results_dir / "mlp-per-pollutant" / "comparison_metrics_summary.json"
+
+            comparison_summary_path = (
+                results_dir / "mlp-per-pollutant" / "comparison_metrics_summary.json"
+            )
             comparison_summary = evaluate.generate_comparison_metrics_summary(
                 per_pollutant_metrics=per_pollutant_metrics_summary,
-                multi_output_metrics=None,  
+                multi_output_metrics=None,
                 save_path=str(comparison_summary_path),
-                pollutant_names=pollutant_names
+                pollutant_names=pollutant_names,
             )
-            
-            mlflow.log_metric("performance_variability_rmse", comparison_summary["comparison_analysis"]["statistical_summary"].get("rmse_coefficient_of_variation", 0.0))
-            mlflow.log_metric("performance_range_r2", comparison_summary["comparison_analysis"]["statistical_summary"].get("r2_range", 0.0))
-            
-            best_rmse_pollutant = comparison_summary["comparison_analysis"]["statistical_summary"].get("best_rmse_pollutant")
-            best_r2_pollutant = comparison_summary["comparison_analysis"]["statistical_summary"].get("best_r2_pollutant")
-            
+
+            mlflow.log_metric(
+                "performance_variability_rmse",
+                comparison_summary["comparison_analysis"]["statistical_summary"].get(
+                    "rmse_coefficient_of_variation", 0.0
+                ),
+            )
+            mlflow.log_metric(
+                "performance_range_r2",
+                comparison_summary["comparison_analysis"]["statistical_summary"].get(
+                    "r2_range", 0.0
+                ),
+            )
+
+            best_rmse_pollutant = comparison_summary["comparison_analysis"][
+                "statistical_summary"
+            ].get("best_rmse_pollutant")
+            best_r2_pollutant = comparison_summary["comparison_analysis"][
+                "statistical_summary"
+            ].get("best_r2_pollutant")
+
             if best_rmse_pollutant:
                 mlflow.log_param("best_rmse_pollutant", best_rmse_pollutant)
             if best_r2_pollutant:
                 mlflow.log_param("best_r2_pollutant", best_r2_pollutant)
-            
+
             print(f"Comparison metrics summary saved to: {comparison_summary_path}")
             print(f"Best RMSE performance: {best_rmse_pollutant}")
             print(f"Best R² performance: {best_r2_pollutant}")
@@ -928,19 +1015,24 @@ def main() -> None:
 
             if has_history:
                 try:
-                    first_model = pollutant_models["Ozone"] if not args.eval_only else model
+                    first_model = (
+                        pollutant_models["Ozone"] if not args.eval_only else model
+                    )
                     X_train_subset = processed_data["X_train"][:1000]
                     evaluate.shap_summary_plot(
                         first_model,
                         X_train_subset,
                         feature_names_master,
                         save_path=str(mlp_dir / "shap_summary.png"),
+                        show=True,  # Display the plot
                     )
                 except Exception as exc:
                     print(f"SHAP summary plot skipped: {exc}")
 
                 try:
-                    ozone_model = pollutant_models["Ozone"] if not args.eval_only else model
+                    ozone_model = (
+                        pollutant_models["Ozone"] if not args.eval_only else model
+                    )
                     if not args.eval_only:
                         ozone_data = pollutant_processed_data["Ozone"]
                         y_val_single = ozone_data["y_val"].ravel()
@@ -948,7 +1040,7 @@ def main() -> None:
                     else:
                         y_val_single = y_val_raw[:, 0]  # Use first column for Ozone
                         X_val_single = processed_data["X_val"]
-                    
+
                     evaluate.permutation_importance_plot(
                         ozone_model,
                         X_val_single,
@@ -966,9 +1058,11 @@ def main() -> None:
                 for i, pollutant in enumerate(pollutant_names):
                     if not args.eval_only:
                         pollutant_history = pollutant_histories[pollutant]
-                        if (pollutant_history and 
-                            hasattr(pollutant_history, "history") and 
-                            pollutant_history.history.get("mse")):
+                        if (
+                            pollutant_history
+                            and hasattr(pollutant_history, "history")
+                            and pollutant_history.history.get("mse")
+                        ):
                             evaluate.plot_keras_evaluation(
                                 pollutant_history,
                                 y_test_raw[:, i],
@@ -980,9 +1074,13 @@ def main() -> None:
                                 ),
                             )
                         else:
-                            print(f"Skipped plot_keras_evaluation for {pollutant} (no 'mse' in history).")
+                            print(
+                                f"Skipped plot_keras_evaluation for {pollutant} (no 'mse' in history)."
+                            )
                     else:
-                        print(f"Skipped plot_keras_evaluation for {pollutant} (eval-only mode).")
+                        print(
+                            f"Skipped plot_keras_evaluation for {pollutant} (eval-only mode)."
+                        )
             else:
                 print("Skipped plot_keras_evaluation (no ‘mse’ in history).")
 
@@ -1031,127 +1129,164 @@ def main() -> None:
                 for pollutant_name in ["Ozone", "PM2.5", "NO2"]:
                     pollutant_dir = results_dir / "mlp-per-pollutant" / pollutant_name
                     pollutant_dir.mkdir(parents=True, exist_ok=True)
-                    
+
                     single_model = pollutant_models[pollutant_name]
                     single_history = pollutant_histories[pollutant_name]
                     single_data = pollutant_processed_data[pollutant_name]
                     config = pollutant_configs[pollutant_name]
-                    
+
                     single_model.save(pollutant_dir / "mlp_model.keras")
-                    print(f"Saved {pollutant_name} model to {pollutant_dir / 'mlp_model.keras'}")
-                    
+                    print(
+                        f"Saved {pollutant_name} model to {pollutant_dir / 'mlp_model.keras'}"
+                    )
+
                     pollutant_index = config["target_index"]
                     y_val_single = y_val_raw[:, pollutant_index]
                     y_test_single = y_test_raw[:, pollutant_index]
                     y_pred_val_single = y_pred_val_orig[:, pollutant_index]
                     y_pred_test_single = y_pred_test_orig[:, pollutant_index]
-                    
+
                     single_val_metrics = evaluate.calculate_summary_metrics(
-                        y_val_single.reshape(-1, 1), 
-                        y_pred_val_single.reshape(-1, 1), 
-                        [pollutant_name]
+                        y_val_single.reshape(-1, 1),
+                        y_pred_val_single.reshape(-1, 1),
+                        [pollutant_name],
                     )
                     single_test_metrics = evaluate.calculate_summary_metrics(
-                        y_test_single.reshape(-1, 1), 
-                        y_pred_test_single.reshape(-1, 1), 
-                        [pollutant_name]
+                        y_test_single.reshape(-1, 1),
+                        y_pred_test_single.reshape(-1, 1),
+                        [pollutant_name],
                     )
-                    
+
                     metrics_data = {
                         "validation_metrics": single_val_metrics[pollutant_name],
                         "test_metrics": single_test_metrics[pollutant_name],
                         "pollutant_name": pollutant_name,
                         "target_index": config["target_index"],
-                        "scaler_type": "RobustScaler" if config["use_robust_scaler_targets"] else "StandardScaler",
-                        "log_transform": config["log_transform"]
+                        "scaler_type": (
+                            "RobustScaler"
+                            if config["use_robust_scaler_targets"]
+                            else "StandardScaler"
+                        ),
+                        "log_transform": config["log_transform"],
                     }
-                    
+
                     with open(pollutant_dir / "metrics.json", "w") as f:
-                        serializable_metrics = evaluate.convert_to_json_serializable(metrics_data)
+                        serializable_metrics = evaluate.convert_to_json_serializable(
+                            metrics_data
+                        )
                         json.dump(serializable_metrics, f, indent=2)
-                    
-                    print(f"Saved {pollutant_name} metrics: Test RMSE={single_test_metrics[pollutant_name]['RMSE']:.4f}, R²={single_test_metrics[pollutant_name]['R2']:.4f}")
-                    
+
+                    print(
+                        f"Saved {pollutant_name} metrics: Test RMSE={single_test_metrics[pollutant_name]['RMSE']:.4f}, R²={single_test_metrics[pollutant_name]['R2']:.4f}"
+                    )
+
                     try:
                         import pickle as _pkl
-                        
+
                         meta = {
                             "feature_scaler": single_data.get("feature_scaler"),
                             "target_scaler": single_data.get("target_scaler"),
-                            "log_transform_targets": single_data.get("log_transform_targets", []),
+                            "log_transform_targets": single_data.get(
+                                "log_transform_targets", []
+                            ),
                             "feature_columns": single_data.get("feature_columns"),
                             "target_columns": single_data.get("target_columns"),
-                            "target_column_index": single_data.get("target_column_index"),
+                            "target_column_index": single_data.get(
+                                "target_column_index"
+                            ),
                             "pollutant_name": pollutant_name,
                             "preprocessing_config": {
-                                "use_robust_scaler_targets": config["use_robust_scaler_targets"],
+                                "use_robust_scaler_targets": config[
+                                    "use_robust_scaler_targets"
+                                ],
                                 "log_transform": config["log_transform"],
-                                "scaler_type": "RobustScaler" if config["use_robust_scaler_targets"] else "StandardScaler"
-                            }
+                                "scaler_type": (
+                                    "RobustScaler"
+                                    if config["use_robust_scaler_targets"]
+                                    else "StandardScaler"
+                                ),
+                            },
                         }
-                        
+
                         with open(pollutant_dir / "meta.pkl", "wb") as _mf:
                             _pkl.dump(meta, _mf)
-                        
-                        print(f"Saved {pollutant_name} preprocessing metadata with {meta['preprocessing_config']['scaler_type']}")
+
+                        print(
+                            f"Saved {pollutant_name} preprocessing metadata with {meta['preprocessing_config']['scaler_type']}"
+                        )
                     except Exception as _e:  # noqa: BLE001
-                        print(f"Warning: failed to save preprocessing metadata for {pollutant_name} – {_e}")
-                    
+                        print(
+                            f"Warning: failed to save preprocessing metadata for {pollutant_name} – {_e}"
+                        )
+
                     # Save training history for this pollutant
                     if hasattr(single_history, "history"):
                         hist_data = single_history.history
                     else:
                         hist_data = single_history.get("history", {})
-                    
+
                     hist_serializable = {
                         k: [float(vv) for vv in vals] for k, vals in hist_data.items()
                     }
-                    
+
                     with open(pollutant_dir / "training_history.json", "w") as f:
                         json.dump(hist_serializable, f, indent=2)
-                    
+
                     print(f"Generating evaluation plots for {pollutant_name}...")
-                    
+
                     density_dir = pollutant_dir / "density_scatter"
                     density_dir.mkdir(parents=True, exist_ok=True)
-                    
+
                     error_dir = pollutant_dir / "error_histograms"
                     error_dir.mkdir(parents=True, exist_ok=True)
-                    
+
                     n_samples_total = y_test_single.shape[0]
                     sample_size = min(5000, n_samples_total)
-                    sample_idx = np.random.choice(n_samples_total, sample_size, replace=False)
-                    
+                    sample_idx = np.random.choice(
+                        n_samples_total, sample_size, replace=False
+                    )
+
                     evaluate.density_scatter_plot(
                         y_test_single[sample_idx],
                         y_pred_test_single[sample_idx],
                         pollutant_name,
-                        save_path=str(density_dir / f"density_scatter_{pollutant_name.lower().replace('.', '')}.png")
+                        save_path=str(
+                            density_dir
+                            / f"density_scatter_{pollutant_name.lower().replace('.', '')}.png"
+                        ),
                     )
-                    
+
                     errors_single = y_pred_test_single - y_test_single
-                    
+
                     plt.figure(figsize=(8, 6))
-                    plt.hist(errors_single, bins=50, alpha=0.7, edgecolor='black')
-                    plt.xlabel(f'Prediction Error ({pollutant_name})')
-                    plt.ylabel('Frequency')
-                    plt.title(f'Prediction Error Distribution - {pollutant_name}')
+                    plt.hist(errors_single, bins=50, alpha=0.7, edgecolor="black")
+                    plt.xlabel(f"Prediction Error ({pollutant_name})")
+                    plt.ylabel("Frequency")
+                    plt.title(f"Prediction Error Distribution - {pollutant_name}")
                     plt.grid(True, alpha=0.3)
-                    
-                    error_path = error_dir / f"error_histogram_{pollutant_name.lower().replace('.', '')}.png"
-                    plt.savefig(error_path, dpi=150, bbox_inches='tight')
+
+                    error_path = (
+                        error_dir
+                        / f"error_histogram_{pollutant_name.lower().replace('.', '')}.png"
+                    )
+                    plt.savefig(error_path, dpi=150, bbox_inches="tight")
                     plt.close()
-                    
+
                     evaluate.pred_vs_actual_time_series_slice(
                         y_test_single.reshape(-1, 1),
                         y_pred_test_single.reshape(-1, 1),
                         pollutant_names=[pollutant_name],
                         slice_length=500,
-                        save_path=str(pollutant_dir / f"time_series_{pollutant_name.lower().replace('.', '')}.png")
+                        save_path=str(
+                            pollutant_dir
+                            / f"time_series_{pollutant_name.lower().replace('.', '')}.png"
+                        ),
                     )
-                    
-                    print(f"Completed artifact saving for {pollutant_name} in {pollutant_dir}")
-                
+
+                    print(
+                        f"Completed artifact saving for {pollutant_name} in {pollutant_dir}"
+                    )
+
                 print("\nPer-pollutant artifact saving completed:")
                 print("├── results/mlp-per-pollutant/")
                 for pollutant_name in ["Ozone", "PM2.5", "NO2"]:
@@ -1162,10 +1297,12 @@ def main() -> None:
                     print(f"│   │   ├── meta.pkl")
                     print(f"│   │   ├── density_scatter/")
                     print(f"│   │   ├── error_histograms/")
-                    print(f"│   │   └── time_series_{pollutant_name.lower().replace('.', '')}.png")
+                    print(
+                        f"│   │   └── time_series_{pollutant_name.lower().replace('.', '')}.png"
+                    )
             else:
                 model.save(mlp_dir / "mlp_model.keras")
-                
+
                 try:
                     import pickle as _pkl
 
@@ -1202,9 +1339,7 @@ def main() -> None:
                     "Results saved to 'results/mlp-per-pollutant/' with separate models for each pollutant."
                 )
             else:
-                print(
-                    "MLP evaluation completed. Results saved to 'results/mlp/'."
-                )
+                print("MLP evaluation completed. Results saved to 'results/mlp/'.")
 
         elif args.model == "lstm":
             print("\n==================== LSTM Training ====================")

@@ -18,6 +18,7 @@ from data_loader import load_data, get_field_names
 from add_geo_features import add_geospatial_features
 from utils import set_global_seed
 
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Feature-engineering pipeline for air-pollutant prediction dataset",
@@ -27,14 +28,14 @@ def _build_parser() -> argparse.ArgumentParser:
         "--input",
         "-i",
         type=Path,
-        default=Path("data/NON-GEO_input_v2_2d.npy"),
+        default=Path("data/original_2d_data.npy"),
         help="Path to the raw .npy file containing the dataset.",
     )
     parser.add_argument(
         "--output",
         "-o",
         type=Path,
-        default=Path("data/input_with_geo_and_interactions_v4.npy"),
+        default=Path("data/input_with_geo_and_interactions_v5.npy"),
         help="Where to write the processed dataset (.npy).",
     )
     parser.add_argument(
@@ -84,15 +85,25 @@ def main(
         logging.warning(
             "FIELD_NAMES length (%d) does not match data columns (%d). "
             "Padding/truncating with generic labels (col_*) to preserve known names.",
-            len(field_names), n_cols,
+            len(field_names),
+            n_cols,
         )
         if len(field_names) < n_cols:
-            field_names = field_names + [f"col_{i}" for i in range(len(field_names), n_cols)]
+            field_names = field_names + [
+                f"col_{i}" for i in range(len(field_names), n_cols)
+            ]
         else:
             field_names = field_names[:n_cols]
 
     df = pd.DataFrame(raw, columns=field_names)
     logging.info("Loaded DataFrame with shape %s", df.shape)
+
+    logging.info("=== ORIGINAL COLUMN NAMES DEBUG ===")
+    logging.info(f"Total columns: {len(df.columns)}")
+    logging.info("First 10 columns: %s", df.columns[:10].tolist())
+    logging.info("Last 10 columns: %s", df.columns[-10:].tolist())
+    logging.info("All columns: %s", df.columns.tolist())
+    logging.info("=== END DEBUG ===")
 
     # ---------------------------------------------------------------------
     # 2. Ensure latitude/longitude columns are present
@@ -117,7 +128,7 @@ def main(
     logging.info("Geospatial features added. New shape: %s", df.shape)
 
     # ---------------------------------------------------------------------
-    # 3b. Temporal & advanced geographic features 
+    # 3b. Temporal & advanced geographic features
     # ---------------------------------------------------------------------
     logging.info("Adding temporal and advanced geographic features...")
 
@@ -129,6 +140,22 @@ def main(
         # It's good practice to drop the original month column
         df.drop(columns=["month"], inplace=True)
 
+    # Add Day of Year features if the column exists
+    if "day_of_year" in df.columns:
+        logging.info("-> Generating cyclical Day of Year features (sin/cos)...")
+        df["day_of_year_sin"] = np.sin(2 * np.pi * df["day_of_year"] / 365.25)
+        df["day_of_year_cos"] = np.cos(2 * np.pi * df["day_of_year"] / 365.25)
+        df.drop(columns=["day_of_year"], inplace=True, errors="ignore")
+    elif {"year", "month", "day"}.issubset(df.columns):
+        # Create day_of_year from year, month, day if available
+        logging.info("-> Creating day_of_year from year/month/day columns...")
+        df["date"] = pd.to_datetime(df[["year", "month", "day"]])
+        df["day_of_year"] = df["date"].dt.dayofyear
+        logging.info("-> Generating cyclical Day of Year features (sin/cos)...")
+        df["day_of_year_sin"] = np.sin(2 * np.pi * df["day_of_year"] / 365.25)
+        df["day_of_year_cos"] = np.cos(2 * np.pi * df["day_of_year"] / 365.25)
+        df.drop(columns=["day_of_year", "date"], inplace=True, errors="ignore")
+
     # 2. Normalized Year
     if "year" in df.columns and "year_normalized" not in df.columns:
         logging.info("-> Generating normalized year feature...")
@@ -139,10 +166,18 @@ def main(
     if "month" in df.columns:
         logging.info("-> Generating season one-hot encoding...")
         seasons = {
-            12: "Winter", 1: "Winter", 2: "Winter",
-            3: "Spring", 4: "Spring", 5: "Spring",
-            6: "Summer", 7: "Summer", 8: "Summer",
-            9: "Fall", 10: "Fall", 11: "Fall",
+            12: "Winter",
+            1: "Winter",
+            2: "Winter",
+            3: "Spring",
+            4: "Spring",
+            5: "Spring",
+            6: "Summer",
+            7: "Summer",
+            8: "Summer",
+            9: "Fall",
+            10: "Fall",
+            11: "Fall",
         }
         df["season"] = df["month"].apply(lambda x: seasons.get(int(x)))
         season_dummies = pd.get_dummies(df["season"], prefix="season", dtype=int)
@@ -206,7 +241,7 @@ def main(
     for rh_col in rh_col_candidates:
         if {so2_col, rh_col}.issubset(df.columns):
             df["so2_x_rh"] = df[so2_col] * df[rh_col]
-            break 
+            break
 
     extra_cols = [
         "NH3",
@@ -279,44 +314,100 @@ def main(
         df["month_cos"] = np.cos(2 * np.pi * df["month"] / 12.0)
         df.drop(columns=["month"], inplace=True)
 
+    # ---------------------------------------------------------------------
+    # 5. Identify target columns more robustly
+    # ---------------------------------------------------------------------
+    # Try multiple possible target column names
+    target_name_candidates = {
+        "ozone": ["ozone", "Ozone", "ozone_concentration", "O3"],
+        "pm25": ["pm25", "PM25", "PM2.5", "pm25_concentration", "pm2.5_concentration"],
+        "no2": ["no2", "NO2", "no2_concentration", "NO2_concentration"],
+    }
 
-    # ---------------------------------------------------------------------
-    # 5. Diagnostics – correlation heat-map
-    # ---------------------------------------------------------------------
-    target_cols = [col for col in ["Ozone", "PM2.5", "NO2"] if col in df.columns]
+    target_cols = []
+    target_mapping = {}
+
+    # Find actual target columns in the data
+    for target_type, candidates in target_name_candidates.items():
+        found = False
+        for candidate in candidates:
+            if candidate in df.columns:
+                target_cols.append(candidate)
+                target_mapping[target_type] = candidate
+                found = True
+                break
+        if not found:
+            logging.warning(f"Could not find {target_type} target column in data")
+
+    # If no target columns found by name, assume last 3 columns are targets
+    # and rename them to meaningful names
+    if not target_cols:
+        logging.warning(
+            "No target columns found by name, assuming last 3 columns are targets"
+        )
+        all_cols = df.columns.tolist()
+        original_target_cols = all_cols[-3:]  # Last 3 columns
+
+        # Rename the target columns to meaningful names
+        # Based on typical value ranges: NO2, Ozone, PM2.5
+        new_target_names = ["no2_concentration", "ozone", "pm25_concentration"]
+        rename_mapping = dict(zip(original_target_cols, new_target_names))
+
+        df.rename(columns=rename_mapping, inplace=True)
+        target_cols = new_target_names
+
+        logging.info(
+            f"Renamed target columns: {dict(zip(original_target_cols, new_target_names))}"
+        )
+        logging.info(f"Using target columns: {target_cols}")
+    else:
+        logging.info(f"Found target columns: {target_cols}")
+
+    # Separate features from targets
     feature_cols = [c for c in df.columns if c not in target_cols]
 
-    args.figure_dir.mkdir(parents=True, exist_ok=True)
-    heatmap_path = args.figure_dir / "feature_target_correlation.png"
-
-    logging.info("Generating correlation heat-map → %s", heatmap_path)
-    sns.set_style("whitegrid")
-    plt.figure(figsize=(16, 12))
-    corr = df[feature_cols + target_cols].corr()
-    sns.heatmap(corr, cmap="coolwarm", center=0, vmin=-1, vmax=1)
-    plt.title("Feature–Target Correlation (incl. geospatial)")
-    plt.tight_layout()
-    plt.savefig(heatmap_path, dpi=300)
-    plt.close()
+    logging.info(f"Final feature count: {len(feature_cols)}")
+    logging.info(f"Final target count: {len(target_cols)}")
 
     # ---------------------------------------------------------------------
-    # 6. Save processed dataset
+    # 6. Diagnostics – correlation heat-map
     # ---------------------------------------------------------------------
-    final_features = feature_cols  # targets already in correct position later
-    df_final = df[final_features + target_cols]
+    if target_cols:  # Only create heatmap if we have targets
+        args.figure_dir.mkdir(parents=True, exist_ok=True)
+        heatmap_path = args.figure_dir / "feature_target_correlation.png"
+
+        logging.info("Generating correlation heat-map → %s", heatmap_path)
+        sns.set_style("whitegrid")
+        plt.figure(figsize=(16, 12))
+        corr = df[feature_cols + target_cols].corr()
+        sns.heatmap(corr, cmap="coolwarm", center=0, vmin=-1, vmax=1)
+        plt.title("Feature–Target Correlation (incl. geospatial)")
+        plt.tight_layout()
+        plt.savefig(heatmap_path, dpi=300)
+        plt.close()
+
+    # ---------------------------------------------------------------------
+    # 7. Save processed dataset with proper column ordering
+    # ---------------------------------------------------------------------
+    # Ensure consistent column ordering: features first, then targets
+    df_final = df[feature_cols + target_cols]
+
+    # Save the numpy array
     args.output.parent.mkdir(parents=True, exist_ok=True)
     np.save(args.output, df_final.values.astype(np.float32))
     logging.info("Saved processed data → %s", args.output)
 
-    logging.info("Feature-engineering pipeline completed ✅")
-    
+    # Save the actual column names that correspond to the saved data
     final_column_names = df_final.columns.tolist()
     column_names_path = args.output.parent / "final_column_names.json"
 
-    with open(column_names_path, 'w') as f:
+    with open(column_names_path, "w") as f:
         json.dump(final_column_names, f, indent=2)
 
     logging.info("Saved final column names -> %s", column_names_path)
+    logging.info(f"Final dataset shape: {df_final.shape}")
+    logging.info(f"Features: {len(feature_cols)}, Targets: {len(target_cols)}")
+    logging.info(f"Target columns: {target_cols}")
     logging.info("Feature-engineering pipeline completed ✅")
 
 
